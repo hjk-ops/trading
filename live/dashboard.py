@@ -89,7 +89,7 @@ PAGE = """<!DOCTYPE html>
   <div class="card"><div class="label">현재 포지션</div><div class="value" id="position">-</div></div>
   <div class="card"><div class="label">현재가 / 시그널</div><div class="value" id="pricesig">-</div></div>
   <div class="card"><div class="label">잔고 (USDT)</div><div class="value" id="cash">-</div></div>
-  <div class="card"><div class="label">누적 실현수익</div><div class="value" id="realized">-</div></div>
+  <div class="card"><div class="label">실현수익 (청산 완료분)</div><div class="value" id="realized">-</div></div>
   <div class="card"><div class="label">거래 / 승률</div><div class="value" id="stats">-</div></div>
   <div class="card"><div class="label">마지막 체크</div><div class="value" id="lastcheck" style="font-size:14px">-</div></div>
 </div>
@@ -148,11 +148,19 @@ async function refresh() {
   const pm = posMap[String(bs.position ?? '')] || ['-','flat'];
   const pe = document.getElementById('position');
   let ptxt = pm[0];
-  if (bs.upnl != null) ptxt += ` (${bs.upnl>=0?'+':''}${bs.upnl.toFixed(2)}%)`;
+  // 실시간 평가손익: 10초 티커 가격으로 직접 계산
+  const qty = d.state.qty || 0, entry = d.state.entry_price || 0;
+  const pnow = (d.price_now && d.price_now.price) || bs.price;
+  let upnl = null;
+  if (qty && entry && pnow) {
+    upnl = (pnow / entry - 1) * (qty > 0 ? 1 : -1) * 100;
+    ptxt = (qty > 0 ? '롱 (LONG)' : '숏 (SHORT)') + ` ${upnl>=0?'+':''}${upnl.toFixed(2)}%`;
+  }
   pe.textContent = ptxt;
-  pe.className = 'value ' + (bs.upnl != null ? (bs.upnl>=0?'pos':'neg') : pm[1]);
+  pe.className = 'value ' + (upnl != null ? (upnl>=0?'pos':'neg') : pm[1]);
+  const showPx = (d.price_now && d.price_now.price) || bs.price;
   document.getElementById('pricesig').textContent =
-    bs.price ? `$${Math.round(bs.price).toLocaleString()} / ${({'-1':'숏','0':'현금','1':'롱'})[String(bs.signal)]||'-'}` : '-';
+    showPx ? `$${Math.round(showPx).toLocaleString()} / ${({'-1':'숏','0':'현금','1':'롱'})[String(bs.signal)]||'-'}` : '-';
   document.getElementById('lastcheck').textContent = bs.time || '-';
   document.getElementById('cash').textContent =
     d.state.cash != null ? d.state.cash.toLocaleString(undefined,{maximumFractionDigits:0}) : '-';
@@ -220,6 +228,7 @@ class Handler(BaseHTTPRequestHandler):
                 "trades": _read("live_trades.json", []),
                 "bot": _read("bot_status.json", {}),
                 "history": _read("price_history.json", []),
+                "price_now": _read("price_now.json", {}),
             }
             self._send(json.dumps(payload, ensure_ascii=False).encode(),
                        "application/json")

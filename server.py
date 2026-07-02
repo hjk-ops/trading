@@ -36,6 +36,22 @@ log = logging.getLogger("server")
 
 STATUS_FILE = Path("bot_status.json")
 HISTORY_FILE = Path("price_history.json")
+TICKER_FILE = Path("price_now.json")
+
+
+def ticker_loop():
+    """10초마다 현재가만 갱신 (대시보드 실시간 평가손익용)."""
+    import ccxt
+    ex = ccxt.bybit({"options": {"defaultType": "swap"}})
+    symbol = os.environ.get("SYMBOL", "BTC/USDT:USDT")
+    while True:
+        try:
+            t = ex.fetch_ticker(symbol)
+            TICKER_FILE.write_text(json.dumps(
+                {"price": float(t["last"]), "time": time.strftime("%H:%M:%S")}))
+        except Exception as e:
+            log.debug(f"[TICKER] {e}")
+        time.sleep(10)
 
 
 def write_status(**kw):
@@ -114,6 +130,7 @@ def trading_loop():
 def main():
     port = int(os.environ.get("PORT", "8800"))
     threading.Thread(target=trading_loop, daemon=True).start()
+    threading.Thread(target=ticker_loop, daemon=True).start()
     log.info(f"[WEB] 대시보드 서비스 시작: 0.0.0.0:{port}")
     HTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
