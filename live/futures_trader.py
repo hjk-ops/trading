@@ -140,7 +140,9 @@ class BybitFuturesBroker:
         qty = usdt / price
         side = "buy" if direction > 0 else "sell"
         r = self.api.create_order(self.symbol, "market", side, qty)
-        log.info(f"[BYBIT] {'LONG' if direction>0 else 'SHORT'} 진입 {qty:.6f}: {r['id']}")
+        tag = "LONG" if direction > 0 else "SHORT"
+        record_trade(tag, price, usdt)
+        log.info(f"[BYBIT] {tag} 진입 {qty:.6f}: {r['id']}")
 
     def close(self, price):
         q = self._position()
@@ -149,7 +151,10 @@ class BybitFuturesBroker:
         side = "sell" if q > 0 else "buy"
         r = self.api.create_order(self.symbol, "market", side, abs(q),
                                   params={"reduceOnly": True})
-        log.info(f"[BYBIT] 청산 {abs(q):.6f}: {r['id']}")
+        pnl = self.unrealized_pct(price) * 100
+        record_trade("CLOSE-L" if q > 0 else "CLOSE-S", price,
+                     abs(q) * price, pnl_pct=pnl)
+        log.info(f"[BYBIT] 청산 {abs(q):.6f} (약 {pnl:+.2f}%): {r['id']}")
 
 
 def fetch_candles(symbol, interval="4h", count=250) -> pd.DataFrame:

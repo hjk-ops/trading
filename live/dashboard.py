@@ -54,7 +54,7 @@ PAGE = """<!DOCTYPE html>
   .muted { color: #8b90a0; font-size: 11.5px; margin-top: 14px; }
 </style></head>
 <body>
-<h1>🤖 자동매매 대시보드 <span id="badge" class="badge">…</span></h1>
+<h1>🤖 자동매매 대시보드 <span id="modebadge" class="badge pause">…</span><span id="badge" class="badge">…</span></h1>
 <div class="sub" id="botinfo">상태 불러오는 중…</div>
 <div class="controls">
   <button id="toggleBtn" class="btn-pause" onclick="control()">⏸ 일시정지</button>
@@ -109,6 +109,9 @@ async function refresh() {
   if (bs.error) { badge.textContent='오류'; badge.className='badge err'; }
   else if (paused) { badge.textContent='일시정지'; badge.className='badge pause'; }
   else { badge.textContent='가동중'; badge.className='badge run'; }
+  const mb = document.getElementById('modebadge');
+  if (bs.mode === 'LIVE') { mb.textContent = '실계좌'; mb.className = 'badge err'; }
+  else { mb.textContent = '모의'; mb.className = 'badge pause'; }
   document.getElementById('toggleBtn').textContent = paused ? '▶ 재개' : '⏸ 일시정지';
   document.getElementById('toggleBtn').className = paused ? 'btn-resume' : 'btn-pause';
   document.getElementById('botinfo').textContent =
