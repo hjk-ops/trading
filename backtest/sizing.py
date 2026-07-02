@@ -36,12 +36,14 @@ def regime_filter(df: pd.DataFrame, ma_period: int = 120) -> pd.Series:
 
 def run_backtest_sized(df: pd.DataFrame, weight: pd.Series,
                        fee: float = 0.0005, slippage: float = 0.0005) -> pd.Series:
-    """부분 포지션 백테스트 (벡터화). weight: 0.0~1.0 목표 비중.
+    """부분 포지션 백테스트 (벡터화). weight: -1.0~1.0 목표 비중 (음수 = 숏).
+
+    주의: 숏은 선물 기준. 펀딩비는 미반영 (무기한 평균 연 5~10% 추가 비용 가정 필요).
 
     체결: 다음 봉부터 반영 (shift). 비용: 비중 변화량에 비례.
     반환: 자산 곡선 (1.0 시작).
     """
-    w = weight.reindex(df.index).fillna(0).clip(0, 1)
+    w = weight.reindex(df.index).fillna(0).clip(-1, 1)  # 음수 = 숏
     ret = df["close"].pct_change().fillna(0)
     cost = fee + slippage
     w_prev = w.shift(1).fillna(0)
