@@ -1,25 +1,21 @@
 """Railway 배포용 통합 서버: 모의매매 봇(백그라운드) + 웹 대시보드(HTTP).
 
-환경변수 설정 (Railway Variables에서):
-  PORT       - Railway가 자동 주입 (직접 설정 불필요)
-  STRATEGY   - donchian_ls | sma_ls          (기본: donchian_ls)
-  PARAMS     - 전략 파라미터 JSON             (기본: {"n":40})
-  SYMBOL     - 거래 심볼                      (기본: BTC/USDT:USDT)
-  INTERVAL   - 봉 주기                        (기본: 4h)
-  POLL_SEC   - 폴링 간격 초                   (기본: 300)
-  MAX_USDT   - 가상 포지션 명목가              (기본: 500)
-  STOP_LOSS  - 손절 비율                      (기본: -0.05)
+환경변수 (Railway Variables):
+  PORT, STRATEGY(donchian_ls|sma_ls), PARAMS, SYMBOL, INTERVAL, POLL_SEC,
+  MAX_USDT, STOP_LOSS, DASHBOARD_PASSWORD(제어 버튼 비밀번호, 기본 "1234")
 
-⚠️ 이 서버는 페이퍼(모의매매) 전용이다. 실계좌 매매는 배포하지 말 것.
-⚠️ Railway 재배포 시 상태 파일(futures_state.json)이 초기화된다 (기록용 로그는 대시보드에서 확인).
-⚠️ Bybit는 미국 IP를 차단한다. 시세 조회가 403으로 실패하면
-   Railway 프로젝트 Settings → Region을 Southeast Asia(싱가포르) 또는 EU로 변경할 것.
+제어 파일 (대시보드 버튼이 생성/삭제):
+  STOP      - 존재하면 일시정지 (포지션 청산 후 관망, 삭제 시 재개)
+  CLOSE_NOW - 존재하면 즉시 수동 청산 후 파일 삭제 (매매는 계속)
+
+⚠️ 페이퍼(모의매매) 전용. Bybit 미국 IP 차단 시 Railway Region을 Singapore/EU로.
 """
 import json
 import logging
 import os
 import threading
 import time
+from pathlib import Path
 from http.server import HTTPServer
 
 from live.dashboard import Handler
@@ -29,6 +25,19 @@ from live.futures_trader import (PaperFuturesBroker, fetch_candles, reconcile,
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("server")
+
+STATUS_FILE = Path("bot_status.json")
+HISTORY_FILE = Path("price_history.json")
+
+
+def write_status(**kw):
+    STATUS_FILE.write_text(json.dumps(kw, ensure_ascii=False))
+
+
+def write_history(df):
+    hist = [{"t": ts.strftime("%m-%d %H:%M"), "c": float(c)}
+            for ts, c in df["close"].tail(300).items()]
+    HISTORY_FILE.write_text(json.dumps(hist))
 
 
 def trading_loop():
@@ -48,17 +57,37 @@ def trading_loop():
         try:
             df = fetch_candles(symbol, interval)
             price = float(df["close"].iloc[-1])
+            write_history(df)
             target = int(strat.generate_signals(df.iloc[:-1], **params).iloc[-1])
-            reconcile(broker, target, price, max_usdt, stop_loss)
+
+            paused = Path("STOP").exists()
+            if Path("CLOSE_NOW").exists():
+                log.warning("[BOT] 수동 청산 요청")
+                broker.close(price)
+                Path("CLOSE_NOW").unlink(missing_ok=True)
+            elif paused:
+                if broker.side() != 0:
+                    log.warning("[BOT] 일시정지 → 포지션 청산")
+                    broker.close(price)
+            else:
+                reconcile(broker, target, price, max_usdt, stop_loss)
+
+            write_status(time=time.strftime("%Y-%m-%d %H:%M:%S"),
+                         price=price, signal=target, position=broker.side(),
+                         paused=paused, strategy=strat.name, symbol=symbol,
+                         interval=interval, error=None)
         except Exception as e:
-            log.error(f"[BOT] 루프 오류 (다음 폴링에서 재시도): {e}")
+            log.error(f"[BOT] 루프 오류 (재시도 예정): {e}")
+            write_status(time=time.strftime("%Y-%m-%d %H:%M:%S"),
+                         price=None, signal=None, position=None,
+                         paused=Path("STOP").exists(), strategy=strat.name,
+                         symbol=symbol, interval=interval, error=str(e)[:200])
         time.sleep(poll_sec)
 
 
 def main():
     port = int(os.environ.get("PORT", "8800"))
-    t = threading.Thread(target=trading_loop, daemon=True)
-    t.start()
+    threading.Thread(target=trading_loop, daemon=True).start()
     log.info(f"[WEB] 대시보드 서비스 시작: 0.0.0.0:{port}")
     HTTPServer(("0.0.0.0", port), Handler).serve_forever()
 
