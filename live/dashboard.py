@@ -299,7 +299,7 @@ async function refresh() {
 }
 refresh(); setInterval(refresh, 10000);
 </script>
-</body></html>
+</body></html>"""
 
 
 def _read(path, default):
