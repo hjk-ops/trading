@@ -20,6 +20,9 @@ import logging
 import os
 import threading
 import time
+
+os.environ["TZ"] = "Asia/Seoul"  # 모든 시각을 한국시간으로
+time.tzset()
 from pathlib import Path
 from http.server import HTTPServer
 
@@ -40,8 +43,10 @@ def write_status(**kw):
 
 
 def write_history(df):
+    closes = df["close"].tail(300)
+    closes.index = closes.index + __import__("pandas").Timedelta(hours=9)  # UTC→KST
     hist = [{"t": ts.strftime("%m-%d %H:%M"), "c": float(c)}
-            for ts, c in df["close"].tail(300).items()]
+            for ts, c in closes.items()]
     HISTORY_FILE.write_text(json.dumps(hist))
 
 
@@ -90,8 +95,10 @@ def trading_loop():
             else:
                 reconcile(broker, target, price, max_usdt, stop_loss)
 
+            upnl = broker.unrealized_pct(price) * 100 if broker.side() else None
             write_status(time=time.strftime("%Y-%m-%d %H:%M:%S"),
                          price=price, signal=target, position=broker.side(),
+                         upnl=upnl, entry=getattr(broker, "entry_price", 0) or None,
                          paused=paused, strategy=strat.name, symbol=symbol,
                          interval=interval, mode=mode, error=None)
         except Exception as e:

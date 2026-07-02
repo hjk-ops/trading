@@ -115,11 +115,17 @@ async function refresh() {
   document.getElementById('toggleBtn').textContent = paused ? '▶ 재개' : '⏸ 일시정지';
   document.getElementById('toggleBtn').className = paused ? 'btn-resume' : 'btn-pause';
   document.getElementById('botinfo').textContent =
-    `${bs.strategy||''} · ${bs.symbol||''} · ${bs.interval||''}` + (bs.error ? ` · ⚠️ ${bs.error}` : '');
+    `${bs.strategy||''} · ${bs.symbol||''} · ${bs.interval||''}` +
+    (bs.entry ? ` · 진입가 $${Math.round(bs.entry).toLocaleString()}` : '') +
+    (bs.error ? ` · ⚠️ ${bs.error}` : '');
 
   const posMap = {'-1':['숏 (SHORT)','neg'], '0':['현금 대기','flat'], '1':['롱 (LONG)','pos']};
   const pm = posMap[String(bs.position ?? '')] || ['-','flat'];
-  const pe = document.getElementById('position'); pe.textContent = pm[0]; pe.className='value '+pm[1];
+  const pe = document.getElementById('position');
+  let ptxt = pm[0];
+  if (bs.upnl != null) ptxt += ` (${bs.upnl>=0?'+':''}${bs.upnl.toFixed(2)}%)`;
+  pe.textContent = ptxt;
+  pe.className = 'value ' + (bs.upnl != null ? (bs.upnl>=0?'pos':'neg') : pm[1]);
   document.getElementById('pricesig').textContent =
     bs.price ? `$${Math.round(bs.price).toLocaleString()} / ${({'-1':'숏','0':'현금','1':'롱'})[String(bs.signal)]||'-'}` : '-';
   document.getElementById('lastcheck').textContent = bs.time || '-';
@@ -149,8 +155,8 @@ async function refresh() {
       .filter(p=>p.x>=0),
     pointStyle:style, rotation:rot||0, radius:7, backgroundColor:color, borderColor:color });
   const cfg = { labels, datasets: [
-    { type:'line', data: prices, borderColor:'#60a5fa', borderWidth:1.5,
-      pointRadius:0, tension:.2 },
+    { type:'line', data: prices.map((p,i)=>({x:i, y:p})), borderColor:'#60a5fa',
+      borderWidth:1.5, pointRadius:0, tension:.2 },
     mk(['LONG','BUY'], '#4ade80', 'triangle'),
     mk(['SHORT'], '#f87171', 'triangle', 180),
     mk(['CLOSE-L','CLOSE-S','SELL'], '#d1d5db', 'circle'),
