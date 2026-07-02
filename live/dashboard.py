@@ -158,6 +158,7 @@ PAGE = """<!DOCTYPE html>
 <div class="controls">
   <button id="toggleBtn" class="pausebtn" onclick="control()">일시정지</button>
   <button class="closebtn" onclick="control('close')">수동 청산</button>
+  <button id="modeBtn" class="closebtn" onclick="switchMode()">실계좌 전환</button>
 </div>
 
 <div class="grid">
@@ -203,6 +204,20 @@ async function control(action) {
   if (r.status === 403) { sessionStorage.removeItem('pw'); alert('비밀번호가 틀렸습니다'); return; }
   const d = await r.json(); alert(d.message); refresh();
 }
+let curMode='PAPER', liveReady=false;
+function switchMode() {
+  if (curMode === 'LIVE') {
+    if (confirm('모의(PAPER) 모드로 전환할까요? 실계좌 포지션은 청산됩니다.')) control('paper');
+    return;
+  }
+  if (!liveReady) {
+    alert('실계좌 전환 준비가 안 됐습니다.\nRailway Variables에 BYBIT_KEY / BYBIT_SECRET 등록 + DASHBOARD_PASSWORD 변경이 필요합니다.');
+    return;
+  }
+  if (!confirm('⚠️ 실제 자금으로 매매하는 실계좌(LIVE) 모드로 전환합니다.\n손실은 본인 책임입니다. 계속할까요?')) return;
+  if (prompt('확인을 위해 LIVE 를 입력하세요') !== 'LIVE') { alert('전환 취소됨'); return; }
+  control('live');
+}
 function nearestIdx(labels, t) {
   const key = t.slice(5,16).replace('T',' ');
   let best=-1;
@@ -220,8 +235,13 @@ async function refresh() {
   else if (paused) { badge.textContent='PAUSED'; badge.style.color=css('--amber'); led.className='led pause'; }
   else { badge.textContent='RUNNING'; badge.style.color=css('--up'); led.className='led'; }
   const mb = document.getElementById('modebadge');
-  if (bs.mode === 'LIVE') { mb.textContent='LIVE'; mb.className='tag live'; }
+  curMode = bs.mode || 'PAPER'; liveReady = !!d.live_ready;
+  if (curMode === 'LIVE') { mb.textContent='LIVE'; mb.className='tag live'; }
   else { mb.textContent='PAPER'; mb.className='tag'; }
+  const mBtn = document.getElementById('modeBtn');
+  mBtn.textContent = curMode === 'LIVE' ? '모의로 전환' : '실계좌 전환';
+  mBtn.style.borderColor = curMode === 'LIVE' ? css('--dn') : '';
+  mBtn.style.color = curMode === 'LIVE' ? css('--dn') : '';
 
   const tb = document.getElementById('toggleBtn');
   tb.textContent = paused ? '매매 재개' : '일시정지';
@@ -340,6 +360,9 @@ class Handler(BaseHTTPRequestHandler):
                 "bot": _read("bot_status.json", {}),
                 "history": _read("price_history.json", []),
                 "price_now": _read("price_now.json", {}),
+                "live_ready": bool(os.environ.get("BYBIT_KEY"))
+                              and bool(os.environ.get("BYBIT_SECRET"))
+                              and os.environ.get("DASHBOARD_PASSWORD", "1234") != "1234",
             }
             self._send(json.dumps(payload, ensure_ascii=False).encode(),
                        "application/json")
@@ -369,6 +392,20 @@ class Handler(BaseHTTPRequestHandler):
         elif action == "close":
             Path("CLOSE_NOW").touch()
             msg = "수동 청산 요청됨 (다음 폴링에서 실행)"
+        elif action == "live":
+            ready = (bool(os.environ.get("BYBIT_KEY"))
+                     and bool(os.environ.get("BYBIT_SECRET"))
+                     and os.environ.get("DASHBOARD_PASSWORD", "1234") != "1234")
+            if not ready:
+                return self._send(json.dumps({"message":
+                    "실계좌 전환 불가: Railway Variables에 BYBIT_KEY/BYBIT_SECRET을 등록하고 "
+                    "DASHBOARD_PASSWORD를 기본값에서 변경하세요."}, ensure_ascii=False).encode(),
+                    "application/json", 400)
+            Path("MODE").write_text("LIVE")
+            msg = "⚠️ 실계좌(LIVE) 전환 요청됨. 다음 폴링에서 모의 포지션 청산 후 실계좌 매매 시작"
+        elif action == "paper":
+            Path("MODE").write_text("PAPER")
+            msg = "모의(PAPER) 전환 요청됨. 다음 폴링에서 실계좌 포지션 청산 후 모의로 복귀"
         else:
             return self._send(b'{"message":"unknown action"}', "application/json", 400)
         self._send(json.dumps({"message": msg}, ensure_ascii=False).encode(),

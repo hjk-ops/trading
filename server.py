@@ -12,6 +12,7 @@
 제어 파일 (대시보드 버튼이 생성/삭제):
   STOP      - 존재하면 일시정지 (포지션 청산 후 관망, 삭제 시 재개)
   CLOSE_NOW - 존재하면 즉시 수동 청산 후 파일 삭제 (매매는 계속)
+  MODE      - "LIVE" 또는 "PAPER" (대시보드에서 전환, 키+비밀번호 조건 충족 시만)
 
 ⚠️ 페이퍼(모의매매) 전용. Bybit 미국 IP 차단 시 Railway Region을 Singapore/EU로.
 """
@@ -82,26 +83,41 @@ def trading_loop():
 
     strat = STRATEGY_MAP[strategy_key]()
 
-    live_req = os.environ.get("LIVE_MODE", "").lower() == "true"
-    has_keys = bool(os.environ.get("BYBIT_KEY")) and bool(os.environ.get("BYBIT_SECRET"))
-    pw_ok = os.environ.get("DASHBOARD_PASSWORD", "1234") != "1234"
-    if live_req and has_keys and pw_ok:
-        broker = BybitFuturesBroker(symbol)
-        mode = "LIVE"
-        log.warning(f"[BOT] ⚠️ 실계좌(LIVE) 매매 시작 · 레버리지 1배: {strat.name} {params} {symbol}")
-    else:
-        broker = PaperFuturesBroker()
-        mode = "PAPER"
-        if live_req:
-            reason = "API 키 없음" if not has_keys else "DASHBOARD_PASSWORD가 기본값(1234)"
-            log.warning(f"[BOT] LIVE_MODE 요청됐지만 거부 ({reason}) → 페이퍼로 동작")
-        log.info(f"[BOT] 모의매매 시작: {strat.name} {params} {symbol} {interval}")
+    def live_allowed():
+        has_keys = bool(os.environ.get("BYBIT_KEY")) and bool(os.environ.get("BYBIT_SECRET"))
+        pw_ok = os.environ.get("DASHBOARD_PASSWORD", "1234") != "1234"
+        return has_keys and pw_ok
+
+    def desired_mode():
+        if Path("MODE").exists():
+            m = Path("MODE").read_text().strip().upper()
+        else:
+            m = "LIVE" if os.environ.get("LIVE_MODE", "").lower() == "true" else "PAPER"
+        return "LIVE" if (m == "LIVE" and live_allowed()) else "PAPER"
+
+    def make_broker(m):
+        if m == "LIVE":
+            log.warning(f"[BOT] ⚠️ 실계좌(LIVE) 매매 · 레버리지 1배: {strat.name} {params} {symbol}")
+            return BybitFuturesBroker(symbol)
+        log.info(f"[BOT] 모의매매(PAPER): {strat.name} {params} {symbol} {interval}")
+        return PaperFuturesBroker()
+
+    mode = desired_mode()
+    broker = make_broker(mode)
 
     while True:
         try:
             df = fetch_candles(symbol, interval)
             price = float(df["close"].iloc[-1])
             write_history(df)
+
+            # 모드 전환 요청 처리: 기존 포지션 청산 후 브로커 교체
+            want = desired_mode()
+            if want != mode:
+                log.warning(f"[BOT] 모드 전환 {mode} → {want}: 기존 포지션 청산")
+                broker.close(price)
+                mode = want
+                broker = make_broker(mode)
             target = int(strat.generate_signals(df.iloc[:-1], **params).iloc[-1])
 
             paused = Path("STOP").exists()
