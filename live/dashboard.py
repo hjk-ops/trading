@@ -52,9 +52,34 @@ PAGE = """<!DOCTYPE html>
   td:first-child, th:first-child { text-align: left; }
   .buy,.long { color: #4ade80; } .sell,.short,.close-l,.close-s { color: #f87171; }
   .muted { color: #8b90a0; font-size: 11.5px; margin-top: 14px; }
+  .intro { display:none; background:#1a1d27; border-radius:12px; padding:4px 16px 10px;
+           margin-bottom:14px; font-size:13.5px; line-height:1.65; color:#c7cbd6; }
+  .intro.open { display:block; }
+  .intro h2 { font-size:13px; color:#60a5fa; margin:14px 0 4px; }
+  .intro p { margin:4px 0; }
 </style></head>
 <body>
-<h1>🤖 자동매매 대시보드 <span id="modebadge" class="badge pause">…</span><span id="badge" class="badge">…</span></h1>
+<h1>🤖 자동매매 대시보드 <span id="modebadge" class="badge pause">…</span><span id="badge" class="badge">…</span>
+<span onclick="document.getElementById('intro').classList.toggle('open')"
+      style="margin-left:auto;cursor:pointer;font-size:15px;color:#8b90a0">ℹ️ 소개</span></h1>
+<div id="intro" class="intro">
+  <h2>이 서비스는?</h2>
+  <p>비트코인 무기한 선물을 <b>돈치안 채널 롱숏</b> 전략으로 24시간 자동매매하는 봇입니다.
+  최근 40봉(약 6.7일) <b>최고가를 돌파하면 롱</b>, <b>최저가를 이탈하면 숏</b>으로 추세를 따라가는
+  추세추종 방식으로, 1980년대 터틀 트레이딩에서 검증된 로직의 양방향 버전입니다.</p>
+  <h2>전략의 성격</h2>
+  <p>승률은 낮은 편(35~50%)이지만 추세를 한번 타면 크게 수익을 내는 <b>손익비형 전략</b>입니다.
+  횡보장에서 잔손실이 이어지는 것은 정상 작동이며, 2025~2026 하락장 백테스트(미접촉 검증 데이터)에서
+  시장이 -33%일 때 +39.6%를 기록했습니다. 과거 성과가 미래 수익을 보장하지는 않습니다.</p>
+  <h2>안전장치</h2>
+  <p>레버리지 1배 고정 · 진입가 대비 -5% 자동 손절(손절 직후 재진입 금지) · 포지션당 금액 상한 ·
+  대시보드에서 일시정지/수동 청산 가능(비밀번호 보호) · 시그널은 마감된 봉만 사용해 가짜 돌파를 걸러냅니다.</p>
+  <h2>차트 읽는 법</h2>
+  <p>파란 선은 가격, <span class="pos">▲</span>는 롱 진입, <span class="neg">▼</span>는 숏 진입,
+  ●는 청산 지점입니다. 현재 포지션 카드의 퍼센트는 실시간 평가손익입니다.</p>
+  <p style="color:#fbbf24">⚠️ 투자 손실은 전적으로 본인 책임입니다. 모의매매로 충분히 검증한 뒤,
+  잃어도 되는 소액으로만 운용하세요.</p>
+</div>
 <div class="sub" id="botinfo">상태 불러오는 중…</div>
 <div class="controls">
   <button id="toggleBtn" class="btn-pause" onclick="control()">⏸ 일시정지</button>
