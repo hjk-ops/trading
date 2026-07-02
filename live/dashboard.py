@@ -538,12 +538,11 @@ class Handler(BaseHTTPRequestHandler):
             (DATA_DIR / "CLOSE_NOW").touch()
             msg = "수동 청산 요청됨 (다음 폴링에서 실행)"
         elif action == "live":
-            ready = (bool(os.environ.get("BYBIT_KEY"))
-                     and bool(os.environ.get("BYBIT_SECRET"))
+            ready = (_keys_present()
                      and os.environ.get("DASHBOARD_PASSWORD", "1234") != "1234")
             if not ready:
                 return self._send(json.dumps({"message":
-                    "실계좌 전환 불가: Railway Variables에 BYBIT_KEY/BYBIT_SECRET을 등록하고 "
+                    "실계좌 전환 불가: API 키를 등록(폼 또는 Railway Variables)하고 "
                     "DASHBOARD_PASSWORD를 기본값에서 변경하세요."}, ensure_ascii=False).encode(),
                     "application/json", 400)
             (DATA_DIR / "MODE").write_text("LIVE")
