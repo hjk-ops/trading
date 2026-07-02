@@ -211,10 +211,10 @@ function switchMode() {
     return;
   }
   if (!liveReady) {
-    alert('실계좌 전환 준비가 안 됐습니다.\nRailway Variables에 BYBIT_KEY / BYBIT_SECRET 등록 + DASHBOARD_PASSWORD 변경이 필요합니다.');
+    alert('실계좌 전환 준비가 안 됐습니다. Railway Variables에 BYBIT_KEY / BYBIT_SECRET 등록 + DASHBOARD_PASSWORD 변경이 필요합니다.');
     return;
   }
-  if (!confirm('⚠️ 실제 자금으로 매매하는 실계좌(LIVE) 모드로 전환합니다.\n손실은 본인 책임입니다. 계속할까요?')) return;
+  if (!confirm('경고: 실제 자금으로 매매하는 실계좌(LIVE) 모드로 전환합니다. 손실은 본인 책임입니다. 계속할까요?')) return;
   if (prompt('확인을 위해 LIVE 를 입력하세요') !== 'LIVE') { alert('전환 취소됨'); return; }
   control('live');
 }
