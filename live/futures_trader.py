@@ -28,6 +28,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 KST = timezone(timedelta(hours=9))
+DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 import pandas as pd
 
@@ -40,8 +42,8 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("futures")
 
 STRATEGY_MAP = {"sma_ls": SmaCrossLS, "donchian_ls": DonchianLS}
-STATE_FILE = Path("futures_state.json")
-TRADES_FILE = Path("live_trades.json")
+STATE_FILE = DATA_DIR / "futures_state.json"
+TRADES_FILE = DATA_DIR / "live_trades.json"
 
 
 def record_trade(side, price, amount, pnl_pct=None, equity=None):

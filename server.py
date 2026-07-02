@@ -40,9 +40,11 @@ logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("server")
 
-STATUS_FILE = Path("bot_status.json")
-HISTORY_FILE = Path("price_history.json")
-TICKER_FILE = Path("price_now.json")
+DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+STATUS_FILE = DATA_DIR / "bot_status.json"
+HISTORY_FILE = DATA_DIR / "price_history.json"
+TICKER_FILE = DATA_DIR / "price_now.json"
 
 
 def ticker_loop():
@@ -89,8 +91,8 @@ def trading_loop():
         return has_keys and pw_ok
 
     def desired_mode():
-        if Path("MODE").exists():
-            m = Path("MODE").read_text().strip().upper()
+        if (DATA_DIR / "MODE").exists():
+            m = (DATA_DIR / "MODE").read_text().strip().upper()
         else:
             m = "LIVE" if os.environ.get("LIVE_MODE", "").lower() == "true" else "PAPER"
         return "LIVE" if (m == "LIVE" and live_allowed()) else "PAPER"
@@ -120,11 +122,11 @@ def trading_loop():
                 broker = make_broker(mode)
             target = int(strat.generate_signals(df.iloc[:-1], **params).iloc[-1])
 
-            paused = Path("STOP").exists()
-            if Path("CLOSE_NOW").exists():
+            paused = (DATA_DIR / "STOP").exists()
+            if (DATA_DIR / "CLOSE_NOW").exists():
                 log.warning("[BOT] 수동 청산 요청")
                 broker.close(price)
-                Path("CLOSE_NOW").unlink(missing_ok=True)
+                (DATA_DIR / "CLOSE_NOW").unlink(missing_ok=True)
             elif paused:
                 if broker.side() != 0:
                     log.warning("[BOT] 일시정지 → 포지션 청산")
@@ -142,7 +144,7 @@ def trading_loop():
             log.error(f"[BOT] 루프 오류 (재시도 예정): {e}")
             write_status(time=kst_now(),
                          price=None, signal=None, position=None,
-                         paused=Path("STOP").exists(), strategy=strat.name,
+                         paused=(DATA_DIR / "STOP").exists(), strategy=strat.name,
                          symbol=symbol, interval=interval, mode=mode,
                          error=str(e)[:200])
         time.sleep(poll_sec)

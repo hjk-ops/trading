@@ -51,6 +51,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 PORT = 8800
+DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 PAGE = """<!DOCTYPE html>
 <html lang="ko"><head>
@@ -420,7 +422,7 @@ refresh(); setInterval(refresh, 10000);
 
 
 def _read(path, default):
-    p = Path(path)
+    p = DATA_DIR / path
     return json.loads(p.read_text()) if p.exists() else default
 
 
@@ -471,13 +473,13 @@ class Handler(BaseHTTPRequestHandler):
 
         action = body.get("action")
         if action == "pause":
-            Path("STOP").touch()
+            (DATA_DIR / "STOP").touch()
             msg = "일시정지 요청됨 (다음 폴링에서 포지션 청산 후 관망)"
         elif action == "resume":
-            Path("STOP").unlink(missing_ok=True)
+            (DATA_DIR / "STOP").unlink(missing_ok=True)
             msg = "재개 요청됨 (다음 폴링부터 매매 재개)"
         elif action == "close":
-            Path("CLOSE_NOW").touch()
+            (DATA_DIR / "CLOSE_NOW").touch()
             msg = "수동 청산 요청됨 (다음 폴링에서 실행)"
         elif action == "live":
             ready = (bool(os.environ.get("BYBIT_KEY"))
@@ -488,10 +490,10 @@ class Handler(BaseHTTPRequestHandler):
                     "실계좌 전환 불가: Railway Variables에 BYBIT_KEY/BYBIT_SECRET을 등록하고 "
                     "DASHBOARD_PASSWORD를 기본값에서 변경하세요."}, ensure_ascii=False).encode(),
                     "application/json", 400)
-            Path("MODE").write_text("LIVE")
+            (DATA_DIR / "MODE").write_text("LIVE")
             msg = "⚠️ 실계좌(LIVE) 전환 요청됨. 다음 폴링에서 모의 포지션 청산 후 실계좌 매매 시작"
         elif action == "paper":
-            Path("MODE").write_text("PAPER")
+            (DATA_DIR / "MODE").write_text("PAPER")
             msg = "모의(PAPER) 전환 요청됨. 다음 폴링에서 실계좌 포지션 청산 후 모의로 복귀"
         else:
             return self._send(b'{"message":"unknown action"}', "application/json", 400)
