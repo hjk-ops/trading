@@ -1,0 +1,15 @@
+{
+  "strategy": "sma",
+  "name": "SMA 골든크로스",
+  "params": {
+    "fast": 20,
+    "slow": 200
+  },
+  "target_vol": 0.0,
+  "regime_ma": 120,
+  "sharpe": -0.9165942675030363,
+  "test_return": -0.09109186677099534,
+  "test_mdd": -0.1720379753932134,
+  "test_win_rate": 0.3333333333333333,
+  "test_trades": 3
+}
