@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+live_state.json
+live_trading.log
+STOP
+data/*.csv
+!data/sample_synthetic_day.csv
+!data/coinbase_BTCUSD_*.csv

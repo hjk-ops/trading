@@ -1,0 +1,4 @@
+pandas>=2.0
+numpy>=1.24
+pyupbit>=0.2.33
+ccxt>=4.0
