@@ -21,8 +21,13 @@ import os
 import threading
 import time
 
-os.environ["TZ"] = "Asia/Seoul"  # 모든 시각을 한국시간으로
-time.tzset()
+from datetime import datetime, timezone, timedelta
+KST = timezone(timedelta(hours=9))
+
+
+def kst_now(fmt="%Y-%m-%d %H:%M:%S"):
+    """컨테이너 tzdata 유무와 무관하게 항상 한국시간 반환."""
+    return datetime.now(KST).strftime(fmt)
 from pathlib import Path
 from http.server import HTTPServer
 
@@ -48,7 +53,7 @@ def ticker_loop():
         try:
             t = ex.fetch_ticker(symbol)
             TICKER_FILE.write_text(json.dumps(
-                {"price": float(t["last"]), "time": time.strftime("%H:%M:%S")}))
+                {"price": float(t["last"]), "time": kst_now("%H:%M:%S")}))
         except Exception as e:
             log.debug(f"[TICKER] {e}")
         time.sleep(10)
@@ -112,14 +117,14 @@ def trading_loop():
                 reconcile(broker, target, price, max_usdt, stop_loss)
 
             upnl = broker.unrealized_pct(price) * 100 if broker.side() else None
-            write_status(time=time.strftime("%Y-%m-%d %H:%M:%S"),
+            write_status(time=kst_now(),
                          price=price, signal=target, position=broker.side(),
                          upnl=upnl, entry=getattr(broker, "entry_price", 0) or None,
                          paused=paused, strategy=strat.name, symbol=symbol,
                          interval=interval, mode=mode, error=None)
         except Exception as e:
             log.error(f"[BOT] 루프 오류 (재시도 예정): {e}")
-            write_status(time=time.strftime("%Y-%m-%d %H:%M:%S"),
+            write_status(time=kst_now(),
                          price=None, signal=None, position=None,
                          paused=Path("STOP").exists(), strategy=strat.name,
                          symbol=symbol, interval=interval, mode=mode,

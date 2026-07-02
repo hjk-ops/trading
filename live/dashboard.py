@@ -163,6 +163,7 @@ PAGE = """<!DOCTYPE html>
 <div class="grid">
   <div class="cell"><div class="eyebrow">LAST PRICE · 현재가/시그널</div><div class="v" id="pricesig">-</div></div>
   <div class="cell"><div class="eyebrow">BALANCE · 잔고 USDT</div><div class="v" id="cash">-</div></div>
+  <div class="cell"><div class="eyebrow">UNREALIZED · 평가손익 (실시간)</div><div class="v" id="unreal">-</div></div>
   <div class="cell"><div class="eyebrow">REALIZED · 실현수익(청산분)</div><div class="v" id="realized">-</div></div>
   <div class="cell"><div class="eyebrow">TRADES · 거래/승률</div><div class="v" id="stats">-</div></div>
   <div class="cell" style="grid-column:1/-1"><div class="eyebrow">LAST CHECK · 마지막 체크 (KST)</div><div class="v small" id="lastcheck">-</div></div>
@@ -245,11 +246,16 @@ async function refresh() {
     tkPnl.textContent = (upnl>=0?'+':'') + upnl.toFixed(2) + '%';
     tkPnl.className = upnl>=0 ? 'pos' : 'neg';
     tkDetail.textContent = `ENTRY ${Math.round(entry).toLocaleString()}  →  NOW ${Math.round(pnow).toLocaleString()}`;
+    const un = document.getElementById('unreal');
+    un.textContent = (upnl>=0?'+':'') + upnl.toFixed(2) + '%';
+    un.className = 'v ' + (upnl>=0?'pos':'neg');
   } else {
     ticket.className = 'ticket';
     tkSide.textContent = '현금 대기 FLAT';
     tkPnl.textContent = '-'; tkPnl.className = 'flat';
     tkDetail.textContent = pnow ? `NOW ${Math.round(pnow).toLocaleString()}` : '-';
+    const un = document.getElementById('unreal');
+    un.textContent = '-'; un.className = 'v flat';
   }
 
   document.getElementById('pricesig').textContent =
@@ -267,10 +273,19 @@ async function refresh() {
   document.getElementById('stats').textContent =
     sells.length ? `${sells.length} / ${(wins/sells.length*100).toFixed(0)}%` : '0 / -';
 
-  document.getElementById('trades').innerHTML = d.trades.slice().reverse().slice(0,50).map(t =>
+  const lastEntryIdx = (()=>{ // 미청산 진입 거래의 원본 인덱스
+    if (!qty) return -1;
+    for (let i=d.trades.length-1;i>=0;i--)
+      if (['LONG','SHORT'].includes(d.trades[i].side)) return i;
+    return -1; })();
+  document.getElementById('trades').innerHTML = d.trades.map((t,i)=>({t,i})).reverse().slice(0,50).map(({t,i}) =>
     `<tr><td>${t.time.slice(5,16)}</td><td class="${t.side.toLowerCase()}">${t.side}</td>
      <td>${Math.round(t.price).toLocaleString()}</td><td>${Math.round(t.amount).toLocaleString()}</td>
-     <td class="${(t.pnl_pct||0)>=0?'pos':'neg'}">${t.pnl_pct==null?'-':(t.pnl_pct>=0?'+':'')+t.pnl_pct.toFixed(2)+'%'}</td></tr>`).join('');
+     <td class="${(t.pnl_pct ?? (i===lastEntryIdx?((pnow/entry-1)*(qty>0?1:-1)*100):0))>=0?'pos':'neg'}">${
+       t.pnl_pct!=null ? (t.pnl_pct>=0?'+':'')+t.pnl_pct.toFixed(2)+'%'
+       : (i===lastEntryIdx && entry && pnow)
+         ? '◉ '+(((pnow/entry-1)*(qty>0?1:-1)*100)>=0?'+':'')+((pnow/entry-1)*(qty>0?1:-1)*100).toFixed(2)+'%'
+         : '-'}</td></tr>`).join('');
 
   // ── 차트 ──
   const hist = d.history || [];

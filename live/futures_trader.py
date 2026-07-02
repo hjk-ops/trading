@@ -24,7 +24,10 @@ import json
 import logging
 import os
 import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+KST = timezone(timedelta(hours=9))
 
 import pandas as pd
 
@@ -43,7 +46,7 @@ TRADES_FILE = Path("live_trades.json")
 
 def record_trade(side, price, amount, pnl_pct=None, equity=None):
     trades = json.loads(TRADES_FILE.read_text()) if TRADES_FILE.exists() else []
-    trades.append({"time": time.strftime("%Y-%m-%d %H:%M:%S"), "side": side,
+    trades.append({"time": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "side": side,
                    "price": price, "amount": amount, "pnl_pct": pnl_pct,
                    "equity": equity})
     TRADES_FILE.write_text(json.dumps(trades, ensure_ascii=False, indent=1))
