@@ -30,6 +30,21 @@ from pathlib import Path
 KST = timezone(timedelta(hours=9))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "."))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+KEYS_FILE = DATA_DIR / "bybit_keys.json"
+
+
+def get_bybit_keys():
+    """환경변수 우선, 없으면 대시보드에서 저장한 키 파일."""
+    k, s = os.environ.get("BYBIT_KEY"), os.environ.get("BYBIT_SECRET")
+    if k and s:
+        return k, s
+    if KEYS_FILE.exists():
+        try:
+            d = json.loads(KEYS_FILE.read_text())
+            return d.get("key"), d.get("secret")
+        except Exception:
+            pass
+    return None, None
 
 import pandas as pd
 
@@ -108,9 +123,11 @@ class PaperFuturesBroker:
 class BybitFuturesBroker:
     def __init__(self, symbol):
         import ccxt
+        k, s = get_bybit_keys()
+        if not (k and s):
+            raise RuntimeError("Bybit API 키가 없습니다")
         self.api = ccxt.bybit({
-            "apiKey": os.environ["BYBIT_KEY"],
-            "secret": os.environ["BYBIT_SECRET"],
+            "apiKey": k, "secret": s,
             "options": {"defaultType": "swap"},
         })
         self.symbol = symbol

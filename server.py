@@ -34,7 +34,8 @@ from http.server import HTTPServer
 
 from live.dashboard import Handler
 from live.futures_trader import (PaperFuturesBroker, BybitFuturesBroker,
-                                 fetch_candles, reconcile, STRATEGY_MAP)
+                                 fetch_candles, reconcile, get_bybit_keys,
+                                 STRATEGY_MAP)
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
@@ -86,9 +87,9 @@ def trading_loop():
     strat = STRATEGY_MAP[strategy_key]()
 
     def live_allowed():
-        has_keys = bool(os.environ.get("BYBIT_KEY")) and bool(os.environ.get("BYBIT_SECRET"))
+        k, s = get_bybit_keys()
         pw_ok = os.environ.get("DASHBOARD_PASSWORD", "1234") != "1234"
-        return has_keys and pw_ok
+        return bool(k and s) and pw_ok
 
     def desired_mode():
         if (DATA_DIR / "MODE").exists():

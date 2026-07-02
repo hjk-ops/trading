@@ -205,6 +205,18 @@ PAGE = """<!DOCTYPE html>
   <button class="closebtn" onclick="control('close')">수동 청산</button>
   <button id="modeBtn" class="closebtn" onclick="switchMode()">실계좌 전환</button>
 </div>
+<div id="keyForm" class="intro" style="margin-top:0">
+  <h2>BYBIT API KEYS</h2>
+  <p id="keyStatus" style="font-family:'IBM Plex Mono',monospace"></p>
+  <p>Bybit → API 관리에서 생성한 키를 입력하세요. 권한은 <b>Contract Trade만</b>,
+  <b style="color:var(--dn)">출금(Withdrawal)은 반드시 해제</b>. 저장된 시크릿은 다시 표시되지 않습니다.</p>
+  <p><input id="kIn" placeholder="API Key" style="width:100%;margin:3px 0;padding:9px;border:1px solid var(--line2);border-radius:4px;background:var(--bg);color:var(--tx);font-family:'IBM Plex Mono',monospace"></p>
+  <p><input id="sIn" placeholder="API Secret" type="password" style="width:100%;margin:3px 0;padding:9px;border:1px solid var(--line2);border-radius:4px;background:var(--bg);color:var(--tx);font-family:'IBM Plex Mono',monospace"></p>
+  <p style="display:flex;gap:8px">
+    <button onclick="saveKeys()">키 저장</button>
+    <button class="closebtn" onclick="deleteKeys()">키 삭제</button>
+  </p>
+</div>
 
 <div class="grid">
   <div class="cell"><div class="eyebrow">LAST PRICE · 현재가/시그널</div><div class="v" id="pricesig">-</div></div>
@@ -257,14 +269,36 @@ async function control(action) {
   if (r.status === 403) { sessionStorage.removeItem('pw'); alert('비밀번호가 틀렸습니다'); return; }
   const d = await r.json(); alert(d.message); refresh();
 }
-let curMode='PAPER', liveReady=false;
+let curMode='PAPER', liveReady=false, keysSet=false;
+async function saveKeys() {
+  const p = pw(); if (!p) return;
+  const k = document.getElementById('kIn').value, s = document.getElementById('sIn').value;
+  const r = await fetch('/api/control', { method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action:'save_keys', password:p, key:k, secret:s}) });
+  if (r.status === 403) { sessionStorage.removeItem('pw'); alert('비밀번호가 틀렸습니다'); return; }
+  const d = await r.json(); alert(d.message);
+  document.getElementById('kIn').value=''; document.getElementById('sIn').value='';
+  refresh();
+}
+async function deleteKeys() {
+  if (!confirm('저장된 API 키를 삭제하고 모의 모드로 전환할까요?')) return;
+  const p = pw(); if (!p) return;
+  const r = await fetch('/api/control', { method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({action:'delete_keys', password:p}) });
+  const d = await r.json(); alert(d.message); refresh();
+}
 function switchMode() {
   if (curMode === 'LIVE') {
     if (confirm('모의(PAPER) 모드로 전환할까요? 실계좌 포지션은 청산됩니다.')) control('paper');
     return;
   }
   if (!liveReady) {
-    alert('실계좌 전환 준비가 안 됐습니다. Railway Variables에 BYBIT_KEY / BYBIT_SECRET 등록 + DASHBOARD_PASSWORD 변경이 필요합니다.');
+    document.getElementById('keyForm').classList.add('open');
+    alert(keysSet
+      ? '먼저 Railway Variables에서 DASHBOARD_PASSWORD를 기본값에서 변경하세요.'
+      : 'API 키가 없습니다. 아래 폼에 Bybit API 키를 입력해 저장한 뒤 다시 눌러주세요.');
     return;
   }
   if (!confirm('경고: 실제 자금으로 매매하는 실계좌(LIVE) 모드로 전환합니다. 손실은 본인 책임입니다. 계속할까요?')) return;
@@ -288,7 +322,9 @@ async function refresh() {
   else if (paused) { badge.textContent='PAUSED'; badge.style.color=css('--amber'); led.className='led pause'; }
   else { badge.textContent='RUNNING'; badge.style.color=css('--up'); led.className='led'; }
   const mb = document.getElementById('modebadge');
-  curMode = bs.mode || 'PAPER'; liveReady = !!d.live_ready;
+  curMode = bs.mode || 'PAPER'; liveReady = !!d.live_ready; keysSet = !!d.keys_set;
+  document.getElementById('keyStatus').textContent =
+    d.keys_set ? `등록된 키: ${d.key_masked || '설정됨'}` : '등록된 키 없음';
   if (curMode === 'LIVE') { mb.textContent='LIVE'; mb.className='tag live'; }
   else { mb.textContent='PAPER'; mb.className='tag'; }
   const mBtn = document.getElementById('modeBtn');
@@ -421,6 +457,25 @@ refresh(); setInterval(refresh, 10000);
 </body></html>"""
 
 
+def _keys_present():
+    if os.environ.get("BYBIT_KEY") and os.environ.get("BYBIT_SECRET"):
+        return True
+    return (DATA_DIR / "bybit_keys.json").exists()
+
+
+def _key_masked():
+    if os.environ.get("BYBIT_KEY"):
+        return os.environ["BYBIT_KEY"][:4] + "····" + " (환경변수)"
+    p = DATA_DIR / "bybit_keys.json"
+    if p.exists():
+        try:
+            k = json.loads(p.read_text()).get("key", "")
+            return k[:4] + "····"
+        except Exception:
+            return None
+    return None
+
+
 def _read(path, default):
     p = DATA_DIR / path
     return json.loads(p.read_text()) if p.exists() else default
@@ -449,9 +504,10 @@ class Handler(BaseHTTPRequestHandler):
                 "bot": _read("bot_status.json", {}),
                 "history": _read("price_history.json", []),
                 "price_now": _read("price_now.json", {}),
-                "live_ready": bool(os.environ.get("BYBIT_KEY"))
-                              and bool(os.environ.get("BYBIT_SECRET"))
+                "live_ready": _keys_present()
                               and os.environ.get("DASHBOARD_PASSWORD", "1234") != "1234",
+                "keys_set": _keys_present(),
+                "key_masked": _key_masked(),
             }
             self._send(json.dumps(payload, ensure_ascii=False).encode(),
                        "application/json")
@@ -495,6 +551,28 @@ class Handler(BaseHTTPRequestHandler):
         elif action == "paper":
             (DATA_DIR / "MODE").write_text("PAPER")
             msg = "모의(PAPER) 전환 요청됨. 다음 폴링에서 실계좌 포지션 청산 후 모의로 복귀"
+        elif action == "save_keys":
+            if os.environ.get("DASHBOARD_PASSWORD", "1234") == "1234":
+                return self._send(json.dumps({"message":
+                    "먼저 Railway Variables에서 DASHBOARD_PASSWORD를 변경하세요. "
+                    "기본 비밀번호로는 키를 저장할 수 없습니다."}, ensure_ascii=False).encode(),
+                    "application/json", 400)
+            k = str(body.get("key", "")).strip()
+            s = str(body.get("secret", "")).strip()
+            if len(k) < 6 or len(s) < 6:
+                return self._send(json.dumps({"message": "키 형식이 올바르지 않습니다."},
+                    ensure_ascii=False).encode(), "application/json", 400)
+            p = DATA_DIR / "bybit_keys.json"
+            p.write_text(json.dumps({"key": k, "secret": s}))
+            try:
+                os.chmod(p, 0o600)
+            except Exception:
+                pass
+            msg = f"API 키 저장됨 ({k[:4]}····). 이제 '실계좌 전환'을 누르면 LIVE로 전환됩니다."
+        elif action == "delete_keys":
+            (DATA_DIR / "bybit_keys.json").unlink(missing_ok=True)
+            (DATA_DIR / "MODE").write_text("PAPER")
+            msg = "API 키 삭제됨. 모의(PAPER)로 전환합니다."
         else:
             return self._send(b'{"message":"unknown action"}', "application/json", 400)
         self._send(json.dumps({"message": msg}, ensure_ascii=False).encode(),
