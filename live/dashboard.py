@@ -9,6 +9,44 @@
 import hmac
 import json
 import os
+import time as _time
+
+_CANDLE_CACHE = {}  # tf -> (timestamp, data)
+_TF_OK = ["1m", "5m", "30m", "1h", "4h", "1d"]
+
+
+def _fetch_candles_api(tf: str):
+    """시간프레임별 캔들 (KST 라벨, 15초 캐시)."""
+    now = _time.time()
+    if tf in _CANDLE_CACHE and now - _CANDLE_CACHE[tf][0] < 15:
+        return _CANDLE_CACHE[tf][1]
+    try:
+        if os.environ.get("FAKE_CANDLES"):  # 오프라인 테스트용
+            import random
+            random.seed(hash(tf) % 1000)
+            px, out = 60000.0, []
+            for i in range(120):
+                o = px
+                c = o * (1 + random.uniform(-0.01, 0.01))
+                h = max(o, c) * (1 + random.uniform(0, 0.005))
+                l = min(o, c) * (1 - random.uniform(0, 0.005))
+                out.append({"t": f"07-02 {i//60:02d}:{i%60:02d}",
+                            "o": o, "h": h, "l": l, "c": c})
+                px = c
+        else:
+            import ccxt
+            from datetime import datetime, timezone, timedelta
+            KST = timezone(timedelta(hours=9))
+            ex = ccxt.bybit({"options": {"defaultType": "swap"}})
+            symbol = os.environ.get("SYMBOL", "BTC/USDT:USDT")
+            rows = ex.fetch_ohlcv(symbol, timeframe=tf, limit=120)
+            fmt = "%m-%d" if tf == "1d" else "%m-%d %H:%M"
+            out = [{"t": datetime.fromtimestamp(r[0] / 1000, KST).strftime(fmt),
+                    "o": r[1], "h": r[2], "l": r[3], "c": r[4]} for r in rows]
+        _CANDLE_CACHE[tf] = (now, out)
+        return out
+    except Exception:
+        return _CANDLE_CACHE.get(tf, (0, []))[1]
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -91,6 +129,11 @@ PAGE = """<!DOCTYPE html>
   .panel-title { display:flex; justify-content:space-between; align-items:baseline;
                  margin-bottom:8px; }
   .legend { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--mut); }
+  .tfbar { display:flex; gap:4px; margin-bottom:10px; }
+  .tf { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 10px;
+        border:1px solid var(--line2); border-radius:3px; background:transparent;
+        color:var(--mut); cursor:pointer; }
+  .tf.on { border-color:var(--blue); color:var(--blue); }
   .legend .u{color:var(--up)} .legend .d{color:var(--dn)}
 
   /* ── 체결 블로터 ── */
@@ -175,7 +218,15 @@ PAGE = """<!DOCTYPE html>
     <span class="eyebrow">PRICE &amp; EXECUTIONS</span>
     <span class="legend"><span class="u">▲ LONG</span> · <span class="d">▼ SHORT</span> · ● CLOSE</span>
   </div>
-  <canvas id="pxChart" height="130"></canvas>
+  <div class="tfbar" id="tfbar">
+    <button class="tf" data-tf="1m">1m</button>
+    <button class="tf" data-tf="5m">5m</button>
+    <button class="tf" data-tf="30m">30m</button>
+    <button class="tf on" data-tf="1h">1H</button>
+    <button class="tf" data-tf="4h">4H</button>
+    <button class="tf" data-tf="1d">1D</button>
+  </div>
+  <canvas id="pxChart" height="150"></canvas>
 </div>
 
 <div class="panel">
@@ -307,27 +358,58 @@ async function refresh() {
          ? '◉ '+(((pnow/entry-1)*(qty>0?1:-1)*100)>=0?'+':'')+((pnow/entry-1)*(qty>0?1:-1)*100).toFixed(2)+'%'
          : '-'}</td></tr>`).join('');
 
-  // ── 차트 ──
-  const hist = d.history || [];
-  const labels = hist.map(h=>h.t), prices = hist.map(h=>h.c);
+  // 거래 마커용 최신 데이터 보관
+  window._trades = d.trades; window._pos = {qty, entry, pnow};
+  drawChart();
+}
+
+let curTf = '1h', candleCache = null, candleTfLoaded = null, lastCandleFetch = 0;
+document.getElementById('tfbar').addEventListener('click', e => {
+  const b = e.target.closest('.tf'); if (!b) return;
+  document.querySelectorAll('.tf').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  curTf = b.dataset.tf; candleCache = null; lastCandleFetch = 0;
+  drawChart();
+});
+
+async function drawChart() {
+  const now = Date.now();
+  if (!candleCache || candleTfLoaded !== curTf || now - lastCandleFetch > 15000) {
+    try {
+      const r = await fetch('/api/candles?tf=' + curTf);
+      const j = await r.json();
+      if (j.candles && j.candles.length) {
+        candleCache = j.candles; candleTfLoaded = curTf; lastCandleFetch = now;
+      }
+    } catch(e) {}
+  }
+  const cs = candleCache || [];
+  const labels = cs.map(c=>c.t);
+  const up = css('--up'), dn = css('--dn');
+  const colors = cs.map(c => c.c >= c.o ? up : dn);
+  const trades = window._trades || [];
   const mk = (sides, color, style, rot) => ({
-    type:'scatter', data: d.trades
+    type:'scatter', data: trades
       .filter(t=>sides.includes(t.side))
       .map(t=>({x:nearestIdx(labels,t.time), y:t.price}))
       .filter(p=>p.x>=0),
-    pointStyle:style, rotation:rot||0, radius:6, backgroundColor:color, borderColor:color });
+    pointStyle:style, rotation:rot||0, radius:6,
+    backgroundColor:color, borderColor:color, order:0 });
   const cfg = { labels, datasets: [
-    { type:'line', data: prices.map((p,i)=>({x:i, y:p})), borderColor:css('--blue'),
-      borderWidth:1.5, pointRadius:0, tension:.2 },
-    mk(['LONG','BUY'], css('--up'), 'triangle'),
-    mk(['SHORT'], css('--dn'), 'triangle', 180),
+    { type:'bar', data: cs.map(c=>[c.l, c.h]), backgroundColor:colors,
+      barPercentage:0.18, categoryPercentage:1.0, grouped:false, order:2 },   // 심지
+    { type:'bar', data: cs.map(c=>[Math.min(c.o,c.c), Math.max(c.o,c.c)]),
+      backgroundColor:colors, barPercentage:0.75, categoryPercentage:1.0,
+      grouped:false, order:1 },                                               // 몸통
+    mk(['LONG','BUY'], up, 'triangle'),
+    mk(['SHORT'], dn, 'triangle', 180),
     mk(['CLOSE-L','CLOSE-S','SELL'], '#AEB7C4', 'circle'),
   ]};
   const opts = { plugins:{legend:{display:false}}, animation:false,
-    scales:{ x:{ type:'linear', grid:{color:'#1E2530'},
-                 ticks:{ color:'#6B7686', maxTicksLimit:6, font:{family:'IBM Plex Mono', size:9},
-                 callback:(v)=>labels[Math.round(v)]||'' } },
-             y:{ grid:{color:'#1E2530'},
+    scales:{ x:{ stacked:false, grid:{color:'#1E2530'},
+                 ticks:{ color:'#6B7686', maxTicksLimit:6, maxRotation:0,
+                         font:{family:'IBM Plex Mono', size:9} } },
+             y:{ grid:{color:'#1E2530'}, beginAtZero:false,
                  ticks:{ color:'#6B7686', font:{family:'IBM Plex Mono', size:9} } } } };
   if (!chart) chart = new Chart(document.getElementById('pxChart'), {data:cfg, options:opts});
   else { chart.data = cfg; chart.update('none'); }
@@ -353,6 +435,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path.startswith("/api/candles"):
+            tf = (self.path.split("tf=")[-1] if "tf=" in self.path else "1h")
+            tf = tf if tf in _TF_OK else "1h"
+            return self._send(json.dumps({"tf": tf, "candles": _fetch_candles_api(tf)},
+                                         ensure_ascii=False).encode(), "application/json")
         if self.path == "/api/status":
             payload = {
                 "state": _read("futures_state.json", _read("live_state.json", {})),
