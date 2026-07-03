@@ -49,7 +49,6 @@ MISSION_PAGE = """<!DOCTYPE html>
   <nav>
     <button id="addBtn" class="navbtn" onclick="toggleAdd()">＋ 지점 추가</button>
     <button class="navbtn" onclick="locate()">◎ 내 위치</button>
-    <a href="/console">콘솔</a>
   </nav>
 </header>
 <div id="hint" class="hint">지도를 탭하면 지점이 추가됩니다</div>
