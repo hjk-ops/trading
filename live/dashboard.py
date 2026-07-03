@@ -522,7 +522,9 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path.startswith("/console"):
             self._send(PAGE.encode(), "text/html")
         else:
-            self._send(MISSION_PAGE.encode(), "text/html")
+            kakao_key = os.environ.get("KAKAO_JS_KEY", "d7f147d651a33631b6d5575b0de237d7")
+            self._send(MISSION_PAGE.replace("__KAKAO_KEY__", kakao_key).encode(),
+                       "text/html")
 
     def do_POST(self):
         if self.path == "/api/mission":
