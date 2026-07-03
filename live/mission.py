@@ -129,11 +129,31 @@ async function removeSpot(id) {
   const r = await api({ action:'delete', id });
   if (r) { spots = r.spots; render(); }
 }
+let locLayer = L.layerGroup().addTo(map);
 function locate() {
-  map.locate({ setView:true, maxZoom:16 });
+  if (!navigator.geolocation) { alert('이 브라우저는 위치 기능을 지원하지 않습니다'); return; }
+  const btn = document.querySelector('.navbtn:nth-child(2)');
+  btn.textContent = '위치 찾는 중…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      btn.textContent = '◎ 내 위치';
+      const ll = [pos.coords.latitude, pos.coords.longitude];
+      locLayer.clearLayers();
+      L.circle(ll, { radius: Math.min(pos.coords.accuracy, 150),
+        color:'#3E9DFF', weight:1, fillOpacity:.15 }).addTo(locLayer);
+      L.circleMarker(ll, { radius:7, color:'#0A0E14', weight:2,
+        fillColor:'#3E9DFF', fillOpacity:1 }).addTo(locLayer);
+      map.setView(ll, 16);
+    },
+    err => {
+      btn.textContent = '◎ 내 위치';
+      if (err.code === 1)
+        alert('위치 권한이 거부되어 있습니다. 아이폰: 설정 > 개인정보 보호 > 위치 서비스 > Safari 웹사이트 = "앱을 사용하는 동안"으로 켠 뒤, Safari 주소창 왼쪽 ㅁA > 웹 사이트 설정 > 위치 = 허용으로 변경하세요.');
+      else if (err.code === 3) alert('위치를 가져오는 데 시간이 초과됐습니다. 실외에서 다시 시도해보세요.');
+      else alert('위치를 가져올 수 없습니다: ' + err.message);
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
 }
-map.on('locationfound', e => L.circle(e.latlng, {radius: e.accuracy/2,
-  color:'#3E9DFF', weight:1}).addTo(map));
 load();
 </script>
 </body></html>"""
