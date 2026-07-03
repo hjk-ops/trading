@@ -39,6 +39,11 @@ MISSION_PAGE = """<!DOCTYPE html>
   .pop .meta { color:var(--mut); font-size:11px; margin:3px 0 8px; }
   .pop button { margin-right:6px; padding:6px 10px; border-radius:4px; font-size:12px;
     border:1px solid var(--line); background:transparent; color:var(--tx); cursor:pointer; }
+  .toast { position:fixed; top:64px; left:12px; right:12px; z-index:2000;
+           background:var(--panel); border:1px solid var(--todo); border-radius:10px;
+           padding:12px 14px; font-size:13px; line-height:1.55; color:var(--tx);
+           box-shadow:0 6px 24px #0009; }
+  .toast .x { float:right; color:var(--mut); font-size:16px; padding:0 4px; }
   .hint { position:fixed; top:64px; left:50%; transform:translateX(-50%);
           background:var(--blue); color:#04121f; font-size:12.5px; font-weight:700;
           padding:7px 14px; border-radius:999px; z-index:1000; display:none; }
@@ -133,6 +138,16 @@ async function removeSpot(id) {
   if (r) { spots = r.spots; render(); }
 }
 let locLayer = L.layerGroup().addTo(map);
+let toastEl = null;
+function toast(html) {
+  if (toastEl) toastEl.remove();
+  toastEl = document.createElement('div');
+  toastEl.className = 'toast';
+  toastEl.innerHTML = '<span class="x">✕</span>' + html;
+  toastEl.onclick = () => { toastEl.remove(); toastEl = null; };
+  document.body.appendChild(toastEl);
+  setTimeout(() => { if (toastEl) { toastEl.remove(); toastEl = null; } }, 12000);
+}
 function locate() {
   if (!navigator.geolocation) { alert('이 브라우저는 위치 기능을 지원하지 않습니다'); return; }
   const btn = document.querySelector('.navbtn:nth-child(2)');
@@ -151,9 +166,9 @@ function locate() {
     err => {
       btn.textContent = '◎ 내 위치';
       if (err.code === 1)
-        alert('위치 권한이 거부되어 있습니다. 아이폰: 설정 > 개인정보 보호 > 위치 서비스 > Safari 웹사이트 = "앱을 사용하는 동안"으로 켠 뒤, Safari 주소창 왼쪽 ㅁA > 웹 사이트 설정 > 위치 = 허용으로 변경하세요.');
-      else if (err.code === 3) alert('위치를 가져오는 데 시간이 초과됐습니다. 실외에서 다시 시도해보세요.');
-      else alert('위치를 가져올 수 없습니다: ' + err.message);
+        toast('위치 권한이 꺼져 있어요. <b>주소창 왼쪽 ㅁA → 웹 사이트 설정 → 위치 → 허용</b>으로 바꾸고 다시 눌러주세요. (안 보이면: 설정 → 위치 서비스 → Safari 웹사이트 켜기)');
+      else if (err.code === 3) toast('위치 잡기에 시간이 걸리네요. 실외에서 다시 시도해보세요.');
+      else toast('위치를 가져올 수 없어요: ' + err.message);
     },
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
 }
