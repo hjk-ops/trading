@@ -123,6 +123,8 @@ function render() {
     const ov = new kakao.maps.CustomOverlay({
       position: new kakao.maps.LatLng(s.lat, s.lng), content: el, yAnchor: 0.5 });
     ov.setMap(map);
+    ['mousedown','touchstart','touchend','pointerdown'].forEach(t =>
+      el.addEventListener(t, ev => ev.stopPropagation()));
     el.onclick = ev => { ev.stopPropagation(); openPop(s); };
     overlays.push(ov);
   });
@@ -136,11 +138,15 @@ function openPop(s) {
   const meta = STATUS_META[s.status] || STATUS_META.todo;
   const el = document.createElement('div');
   el.className = 'kpop';
+  ['click','mousedown','touchstart','touchend','pointerdown'].forEach(t =>
+    el.addEventListener(t, ev => ev.stopPropagation()));
   el.innerHTML = `<b>${s.name}</b>
-    <div class="meta" style="color:${meta[1]};font-size:11px;margin:3px 0 8px">● ${meta[0]} · ${s.time}</div>`;
+    <div class="meta" style="color:${meta[1]};font-size:12px;font-weight:700;margin:4px 0 2px">● ${meta[0]}</div>
+    <div style="color:#6B7686;font-size:10.5px;margin-bottom:8px">${s.time}</div>
+    <div style="color:#6B7686;font-size:10.5px;margin-bottom:4px">상태 변경:</div>`;
   Object.entries(STATUS_META).filter(([k]) => k !== s.status).forEach(([k,[label,c]]) => {
     const b = document.createElement('button');
-    b.textContent = label;
+    b.textContent = '→ ' + label;
     b.style.cssText = `margin:0 6px 6px 0;padding:6px 10px;border-radius:4px;font-size:12px;
       border:1px solid ${c};color:${c};background:transparent`;
     b.onclick = () => setStatus(s.id, k);
