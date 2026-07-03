@@ -605,13 +605,17 @@ class Handler(BaseHTTPRequestHandler):
                 "id": uuid.uuid4().hex[:8],
                 "lat": float(body["lat"]), "lng": float(body["lng"]),
                 "name": str(body.get("name", ""))[:60],
-                "status": "done" if body.get("status") == "done" else "todo",
+                "status": body.get("status") if body.get("status") in ("done", "todo", "pickup") else "todo",
                 "time": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
             })
-        elif action == "toggle":
+        elif action in ("toggle", "status"):
+            new = body.get("status")
             for s in spots:
                 if s["id"] == body.get("id"):
-                    s["status"] = "todo" if s["status"] == "done" else "done"
+                    if new in ("done", "todo", "pickup"):
+                        s["status"] = new
+                    else:  # 구버전 toggle 호환
+                        s["status"] = "todo" if s["status"] == "done" else "done"
                     s["time"] = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M")
         elif action == "delete":
             spots = [s for s in spots if s["id"] != body.get("id")]

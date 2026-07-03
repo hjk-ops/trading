@@ -31,7 +31,18 @@ MISSION_PAGE = """<!DOCTYPE html>
   .stats { position:fixed; bottom:14px; left:50%; transform:translateX(-50%);
            background:var(--panel); border:1px solid var(--line); border-radius:999px;
            padding:8px 18px; font-size:13px; z-index:1000; display:flex; gap:14px; }
-  .stats b.d { color:var(--done); } .stats b.t { color:var(--todo); }
+  .stats b.d { color:var(--done); } .stats b.t { color:var(--todo); } .stats b.p { color:var(--blue); }
+  .sheet { position:fixed; inset:0; background:#0009; z-index:3000; display:flex;
+           align-items:flex-end; }
+  .sheet .box { background:var(--panel); border-top:1px solid var(--line);
+                border-radius:16px 16px 0 0; width:100%; padding:16px 16px 26px; }
+  .sheet h3 { font-size:14px; margin:0 0 12px; }
+  .sheet button { display:block; width:100%; margin:8px 0; padding:14px;
+                  font-size:15px; font-weight:700; border-radius:10px; border:1px solid var(--line);
+                  background:var(--bg); color:var(--tx); }
+  .sheet .sd { border-color:var(--done); color:var(--done); }
+  .sheet .st { border-color:var(--todo); color:var(--todo); }
+  .sheet .sp { border-color:var(--blue); color:var(--blue); }
   .leaflet-popup-content-wrapper { background:var(--panel); color:var(--tx);
     border:1px solid var(--line); border-radius:8px; }
   .leaflet-popup-tip { background:var(--panel); }
@@ -61,6 +72,7 @@ MISSION_PAGE = """<!DOCTYPE html>
 <div class="stats">
   <span>완료 <b class="d" id="cntDone">0</b></span>
   <span>예정 <b class="t" id="cntTodo">0</b></span>
+  <span>픽업 <b class="p" id="cntPickup">0</b></span>
   <span>전체 <b id="cntAll">0</b></span>
 </div>
 <script>
@@ -81,27 +93,53 @@ async function api(payload) {
   if (!r.ok || !d.spots) { alert(d.message || '저장 실패'); return null; }
   return d;
 }
+const STATUS_META = { done:['전도 완료','#00C077'], todo:['방문 예정','#F5A623'],
+                      pickup:['픽업 필요','#3E9DFF'] };
 function icon(status) {
-  const c = status === 'done' ? '#00C077' : '#F5A623';
+  const c = (STATUS_META[status] || STATUS_META.todo)[1];
   return L.divIcon({ className:'', iconSize:[22,22], iconAnchor:[11,11],
     html:`<div style="width:20px;height:20px;border-radius:50%;background:${c};
       border:2.5px solid #0A0E14; box-shadow:0 0 6px ${c}"></div>` });
 }
 function render() {
   layer.clearLayers();
-  let d=0, t=0;
+  const cnt = { done:0, todo:0, pickup:0 };
   spots.forEach(s => {
-    s.status === 'done' ? d++ : t++;
+    cnt[s.status] = (cnt[s.status]||0) + 1;
+    const meta = STATUS_META[s.status] || STATUS_META.todo;
     const m = L.marker([s.lat, s.lng], { icon: icon(s.status) }).addTo(layer);
     m._sid = s.id;
+    const btns = Object.entries(STATUS_META)
+      .filter(([k]) => k !== s.status)
+      .map(([k,[label,c]]) =>
+        `<button style="color:${c};border-color:${c}" onclick="setStatus('${s.id}','${k}')">${label}</button>`)
+      .join('');
     m.bindPopup(`<div class="pop"><b>${s.name}</b>
-      <div class="meta">${s.status==='done'?'전도 완료':'방문 예정'} · ${s.time}</div>
-      <button onclick="toggle('${s.id}')">${s.status==='done'?'예정으로':'완료로'}</button>
+      <div class="meta" style="color:${meta[1]}">● ${meta[0]} · ${s.time}</div>
+      ${btns}
       <button onclick="removeSpot('${s.id}')">삭제</button></div>`);
   });
-  document.getElementById('cntDone').textContent = d;
-  document.getElementById('cntTodo').textContent = t;
+  document.getElementById('cntDone').textContent = cnt.done;
+  document.getElementById('cntTodo').textContent = cnt.todo;
+  document.getElementById('cntPickup').textContent = cnt.pickup;
   document.getElementById('cntAll').textContent = spots.length;
+}
+function pickStatus(name) {
+  return new Promise(res => {
+    const el = document.createElement('div');
+    el.className = 'sheet';
+    el.innerHTML = `<div class="box"><h3>"${name}" 상태 선택</h3>
+      <button class="sd">✔ 전도 완료</button>
+      <button class="st">◷ 방문 예정</button>
+      <button class="sp">📦 픽업 필요</button>
+      <button>취소</button></div>`;
+    const [bd, bt, bp, bc] = el.querySelectorAll('button');
+    bd.onclick = () => { el.remove(); res('done'); };
+    bt.onclick = () => { el.remove(); res('todo'); };
+    bp.onclick = () => { el.remove(); res('pickup'); };
+    bc.onclick = () => { el.remove(); res(null); };
+    document.body.appendChild(el);
+  });
 }
 async function load() {
   const r = await fetch('/api/mission');
@@ -128,8 +166,8 @@ map.on('click', async e => {
     layer.eachLayer(m => { if (m._sid === added.id) m.openPopup(); });
   }
 });
-async function toggle(id) {
-  const r = await api({ action:'toggle', id });
+async function setStatus(id, status) {
+  const r = await api({ action:'status', id, status });
   if (r) { spots = r.spots; render(); }
 }
 async function removeSpot(id) {
