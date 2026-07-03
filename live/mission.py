@@ -66,21 +66,13 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
 
 let spots = [], layer = L.layerGroup().addTo(map), addMode = false;
 
-function pw() {
-  let p = sessionStorage.getItem('pw');
-  if (!p) { p = prompt('비밀번호'); if (p) sessionStorage.setItem('pw', p); }
-  return p;
-}
 async function api(payload) {
-  const p = pw();
-  if (!p) { alert('비밀번호를 입력해야 저장됩니다'); return null; }
   let r;
   try {
     r = await fetch('/api/mission', { method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({...payload, password:p}) });
+      body: JSON.stringify(payload) });
   } catch(e) { alert('네트워크 오류: ' + e.message); return null; }
-  if (r.status === 403) { sessionStorage.removeItem('pw'); alert('비밀번호가 틀렸습니다'); return null; }
   const d = await r.json();
   if (!r.ok || !d.spots) { alert(d.message || '저장 실패'); return null; }
   return d;

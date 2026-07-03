@@ -590,14 +590,12 @@ class Handler(BaseHTTPRequestHandler):
                    "application/json")
 
     def _mission_post(self):
+        # 전도 지도는 누구나 기록 가능 (비밀번호 없음)
         n = int(self.headers.get("Content-Length", 0))
         try:
             body = json.loads(self.rfile.read(n))
         except Exception:
             return self._send(b'{"message":"bad request"}', "application/json", 400)
-        expected = os.environ.get("DASHBOARD_PASSWORD", "1234")
-        if not hmac.compare_digest(str(body.get("password", "")), expected):
-            return self._send(b'{"message":"forbidden"}', "application/json", 403)
 
         from datetime import datetime, timezone, timedelta
         spots = _read("mission_spots.json", [])
