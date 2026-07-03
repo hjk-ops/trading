@@ -72,12 +72,18 @@ function pw() {
   return p;
 }
 async function api(payload) {
-  const p = pw(); if (!p) return null;
-  const r = await fetch('/api/mission', { method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({...payload, password:p}) });
+  const p = pw();
+  if (!p) { alert('비밀번호를 입력해야 저장됩니다'); return null; }
+  let r;
+  try {
+    r = await fetch('/api/mission', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...payload, password:p}) });
+  } catch(e) { alert('네트워크 오류: ' + e.message); return null; }
   if (r.status === 403) { sessionStorage.removeItem('pw'); alert('비밀번호가 틀렸습니다'); return null; }
-  return await r.json();
+  const d = await r.json();
+  if (!r.ok || !d.spots) { alert(d.message || '저장 실패'); return null; }
+  return d;
 }
 function icon(status) {
   const c = status === 'done' ? '#00C077' : '#F5A623';
@@ -91,6 +97,7 @@ function render() {
   spots.forEach(s => {
     s.status === 'done' ? d++ : t++;
     const m = L.marker([s.lat, s.lng], { icon: icon(s.status) }).addTo(layer);
+    m._sid = s.id;
     m.bindPopup(`<div class="pop"><b>${s.name}</b>
       <div class="meta">${s.status==='done'?'전도 완료':'방문 예정'} · ${s.time}</div>
       <button onclick="toggle('${s.id}')">${s.status==='done'?'예정으로':'완료로'}</button>
@@ -118,7 +125,12 @@ map.on('click', async e => {
   const done = confirm('이미 전도를 완료한 곳인가요?\\n확인=완료 · 취소=방문 예정');
   const r = await api({ action:'add', lat:e.latlng.lat, lng:e.latlng.lng,
                         name, status: done ? 'done' : 'todo' });
-  if (r) { spots = r.spots; render(); toggleAdd(); }
+  if (r) {
+    spots = r.spots; render(); toggleAdd();
+    const added = r.spots[r.spots.length - 1];
+    map.panTo([added.lat, added.lng]);
+    layer.eachLayer(m => { if (m._sid === added.id) m.openPopup(); });
+  }
 });
 async function toggle(id) {
   const r = await api({ action:'toggle', id });
@@ -155,5 +167,13 @@ function locate() {
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
 }
 load();
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/mission');
+    const d = await r.json();
+    const cur = JSON.stringify(spots), nw = JSON.stringify(d.spots || []);
+    if (cur !== nw) { spots = d.spots || []; render(); }
+  } catch(e) {}
+}, 12000);
 </script>
 </body></html>"""
