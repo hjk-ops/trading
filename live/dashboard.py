@@ -11,6 +11,8 @@ import json
 import os
 import time as _time
 
+from live.trends import TRENDS_PAGE, fetch_trends
+
 
 _CANDLE_CACHE = {}  # tf -> (timestamp, data)
 _TF_OK = ["1m", "5m", "30m", "1h", "4h", "1d"]
@@ -209,6 +211,7 @@ PAGE = """<!DOCTYPE html>
   <div class="hdr-meta">
     <span id="modebadge" class="tag">…</span>
     <span id="badge" class="tag">…</span>
+    <a class="tag i" href="/trends" style="text-decoration:none">🔥</a>
     <span class="tag i" onclick="document.getElementById('intro').classList.toggle('open')">INFO</span>
   </div>
 </header>
@@ -580,6 +583,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path == "/api/trends":
+            return self._send(json.dumps(fetch_trends(), ensure_ascii=False).encode(),
+                              "application/json")
+        if self.path.startswith("/trends"):
+            return self._send(TRENDS_PAGE.encode(), "text/html")
         if self.path == "/api/signals":
             return self._send(json.dumps({"signals": _fetch_signals()},
                                          ensure_ascii=False).encode(), "application/json")
