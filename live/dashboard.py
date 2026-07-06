@@ -225,6 +225,7 @@ PAGE = """<!DOCTYPE html>
   <div class="cell"><div class="eyebrow">UNREALIZED · 평가손익 (실시간)</div><div class="v" id="unreal">-</div></div>
   <div class="cell"><div class="eyebrow">REALIZED · 실현수익(청산분)</div><div class="v" id="realized">-</div></div>
   <div class="cell"><div class="eyebrow">TRADES · 거래/승률</div><div class="v" id="stats">-</div></div>
+  <div class="cell" style="grid-column:1/-1"><div class="eyebrow">SIGNAL · 매매 판단</div><div class="v small" id="advice" style="line-height:1.7">-</div></div>
   <div class="cell" style="grid-column:1/-1"><div class="eyebrow">LAST CHECK · 마지막 체크 (KST)</div><div class="v small" id="lastcheck">-</div></div>
 </div>
 
@@ -371,6 +372,16 @@ async function refresh() {
   document.getElementById('pricesig').textContent =
     pnow ? `${Math.round(pnow).toLocaleString()} / ${({'-1':'숏','0':'현금','1':'롱'})[String(bs.signal)]||'-'}` : '-';
   document.getElementById('lastcheck').textContent = bs.time || '-';
+  const av = document.getElementById('advice');
+  if (bs.advice && pnow) {
+    const {hi, lo, n} = bs.advice;
+    const toHi = (hi/pnow - 1) * 100, toLo = (lo/pnow - 1) * 100;
+    const state = ({'1':'📈 롱 유지 (상승 추세 추종 중)','-1':'📉 숏 유지 (하락 추세 추종 중)',
+                    '0':'⏸ 관망 (돌파 대기)'})[String(bs.signal)] || '-';
+    av.innerHTML = `${state}<br>` +
+      `<span style="color:#00C077">▲ ${Math.round(hi).toLocaleString()} 돌파 시 롱 전환</span> (+${toHi.toFixed(1)}%)<br>` +
+      `<span style="color:#FF4D5E">▼ ${Math.round(lo).toLocaleString()} 이탈 시 숏 전환</span> (${toLo.toFixed(1)}%)`;
+  } else av.textContent = '-';
   document.getElementById('cash').textContent =
     d.state.cash != null ? d.state.cash.toLocaleString(undefined,{maximumFractionDigits:0}) : '-';
 

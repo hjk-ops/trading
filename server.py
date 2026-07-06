@@ -136,9 +136,19 @@ def trading_loop():
                 reconcile(broker, target, price, max_usdt, stop_loss)
 
             upnl = broker.unrealized_pct(price) * 100 if broker.side() else None
+
+            # 시그널 판독: 돈치안 채널 트리거 가격
+            advice = None
+            if strategy_key == "donchian_ls":
+                n = params.get("n", 40)
+                closed = df.iloc[:-1]
+                ch_hi = float(closed["high"].rolling(n).max().iloc[-1])
+                ch_lo = float(closed["low"].rolling(n).min().iloc[-1])
+                advice = {"hi": ch_hi, "lo": ch_lo, "n": n}
             write_status(time=kst_now(),
                          price=price, signal=target, position=broker.side(),
                          upnl=upnl, entry=getattr(broker, "entry_price", 0) or None,
+                         advice=advice,
                          paused=paused, strategy=strat.name, symbol=symbol,
                          interval=interval, mode=mode, error=None)
         except Exception as e:
