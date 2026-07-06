@@ -14,6 +14,47 @@ import time as _time
 
 _CANDLE_CACHE = {}  # tf -> (timestamp, data)
 _TF_OK = ["1m", "5m", "30m", "1h", "4h", "1d"]
+_SIG_CACHE = {"t": 0, "data": None}
+_SIG_TFS = [("5m", 40), ("15m", 40), ("1h", 40), ("4h", 40)]
+
+
+def _fetch_signals():
+    """멀티 타임프레임 돈치안 판단 (n=40 공통, 30초 캐시)."""
+    now = _time.time()
+    if _SIG_CACHE["data"] and now - _SIG_CACHE["t"] < 30:
+        return _SIG_CACHE["data"]
+    out = []
+    try:
+        import pandas as pd
+        from strategies.long_short import DonchianLS
+        s = DonchianLS()
+        symbol = os.environ.get("SYMBOL", "BTC/USDT:USDT")
+        if os.environ.get("FAKE_CANDLES"):
+            import random
+            for tf, n in _SIG_TFS:
+                random.seed(hash(tf) % 99)
+                px = 60000 * (1 + random.uniform(-0.02, 0.02))
+                hi, lo = px * 1.03, px * 0.97
+                out.append({"tf": tf, "n": n, "signal": random.choice([-1, 0, 1]),
+                            "hi": hi, "lo": lo, "price": px,
+                            "gap": (hi / lo - 1) * 100})
+        else:
+            import ccxt
+            ex = ccxt.bybit({"options": {"defaultType": "swap"}})
+            for tf, n in _SIG_TFS:
+                rows = ex.fetch_ohlcv(symbol, timeframe=tf, limit=n + 30)
+                df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
+                closed = df.iloc[:-1]
+                sig = int(s.generate_signals(closed, n=n).iloc[-1])
+                hi = float(closed["high"].rolling(n).max().iloc[-1])
+                lo = float(closed["low"].rolling(n).min().iloc[-1])
+                out.append({"tf": tf, "n": n, "signal": sig, "hi": hi, "lo": lo,
+                            "price": float(df["close"].iloc[-1]),
+                            "gap": (hi / lo - 1) * 100})
+        _SIG_CACHE.update(t=now, data=out)
+    except Exception:
+        return _SIG_CACHE["data"] or []
+    return out
 
 
 def _fetch_candles_api(tf: str):
@@ -225,7 +266,9 @@ PAGE = """<!DOCTYPE html>
   <div class="cell"><div class="eyebrow">UNREALIZED · 평가손익 (실시간)</div><div class="v" id="unreal">-</div></div>
   <div class="cell"><div class="eyebrow">REALIZED · 실현수익(청산분)</div><div class="v" id="realized">-</div></div>
   <div class="cell"><div class="eyebrow">TRADES · 거래/승률</div><div class="v" id="stats">-</div></div>
-  <div class="cell" style="grid-column:1/-1"><div class="eyebrow">SIGNAL · 매매 판단</div><div class="v small" id="advice" style="line-height:1.7">-</div></div>
+  <div class="cell" style="grid-column:1/-1"><div class="eyebrow">SIGNAL · 타임프레임별 판단 (돈치안 n=40)</div>
+    <div id="sigBoard" style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;line-height:2">-</div>
+    <div id="advice" style="color:#6B7686;font-size:11px;line-height:1.6;margin-top:4px"></div></div>
   <div class="cell" style="grid-column:1/-1"><div class="eyebrow">LAST CHECK · 마지막 체크 (KST)</div><div class="v small" id="lastcheck">-</div></div>
 </div>
 
@@ -372,8 +415,9 @@ async function refresh() {
   document.getElementById('pricesig').textContent =
     pnow ? `${Math.round(pnow).toLocaleString()} / ${({'-1':'숏','0':'현금','1':'롱'})[String(bs.signal)]||'-'}` : '-';
   document.getElementById('lastcheck').textContent = bs.time || '-';
+  loadSignals();
   const av = document.getElementById('advice');
-  if (bs.advice && pnow) {
+  if (false && bs.advice && pnow) {
     const {hi, lo, n} = bs.advice;
     const toHi = (hi/pnow - 1) * 100, toLo = (lo/pnow - 1) * 100;
     const state = ({'1':'📈 롱 유지 (상승 추세 추종 중)','-1':'📉 숏 유지 (하락 추세 추종 중)',
@@ -423,6 +467,28 @@ async function refresh() {
   drawChart();
 }
 
+let lastSigFetch = 0;
+async function loadSignals() {
+  if (Date.now() - lastSigFetch < 25000) return;
+  lastSigFetch = Date.now();
+  try {
+    const r = await fetch('/api/signals');
+    const sigs = (await r.json()).signals || [];
+    if (!sigs.length) return;
+    const nm = {'-1':['숏','#FF4D5E'],'0':['관망','#6B7686'],'1':['롱','#00C077']};
+    document.getElementById('sigBoard').innerHTML = sigs.slice().reverse().map(s => {
+      const [t, c] = nm[String(s.signal)];
+      const bot = s.tf === '4h' ? ' <span style="color:#3E9DFF">◂봇</span>' : '';
+      return `<span style="color:#6B7686">${s.tf.toUpperCase().padStart(3)}</span> ` +
+        `<b style="color:${c}">${t}</b> ` +
+        `<span style="color:#00C077">▲${Math.round(s.hi).toLocaleString()}</span>` +
+        `<span style="color:#FF4D5E">▼${Math.round(s.lo).toLocaleString()}</span> ` +
+        `<span style="color:#6B7686">갭${s.gap.toFixed(1)}%</span>${bot}`;
+    }).join('<br>');
+    document.getElementById('advice').textContent =
+      '▲=돌파 시 롱 전환가 ▼=이탈 시 숏 전환가 · 4H는 봇 매매 기준(검증됨) · 하위 TF는 단타 참고용 - 갭이 좁은 만큼 가짜돌파(휩쏘)도 잦음';
+  } catch(e) {}
+}
 let curTf = '1h', candleCache = null, candleTfLoaded = null, lastCandleFetch = 0;
 document.getElementById('tfbar').addEventListener('click', e => {
   const b = e.target.closest('.tf'); if (!b) return;
@@ -514,6 +580,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path == "/api/signals":
+            return self._send(json.dumps({"signals": _fetch_signals()},
+                                         ensure_ascii=False).encode(), "application/json")
         if self.path.startswith("/api/candles"):
             tf = (self.path.split("tf=")[-1] if "tf=" in self.path else "1h")
             tf = tf if tf in _TF_OK else "1h"
