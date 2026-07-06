@@ -10,9 +10,7 @@ import hmac
 import json
 import os
 import time as _time
-import uuid
 
-from live.mission import MISSION_PAGE
 
 _CANDLE_CACHE = {}  # tf -> (timestamp, data)
 _TF_OK = ["1m", "5m", "30m", "1h", "4h", "1d"]
@@ -171,7 +169,6 @@ PAGE = """<!DOCTYPE html>
     <span id="modebadge" class="tag">…</span>
     <span id="badge" class="tag">…</span>
     <span class="tag i" onclick="document.getElementById('intro').classList.toggle('open')">INFO</span>
-    <a class="tag i" href="/" style="text-decoration:none">전도 지도</a>
   </div>
 </header>
 <div id="botinfo">connecting…</div>
@@ -501,10 +498,6 @@ class Handler(BaseHTTPRequestHandler):
             tf = tf if tf in _TF_OK else "1h"
             return self._send(json.dumps({"tf": tf, "candles": _fetch_candles_api(tf)},
                                          ensure_ascii=False).encode(), "application/json")
-        if self.path == "/api/mission":
-            return self._send(json.dumps(
-                {"spots": _read("mission_spots.json", [])}, ensure_ascii=False).encode(),
-                "application/json")
         if self.path == "/api/status":
             payload = {
                 "state": _read("futures_state.json", _read("live_state.json", {})),
@@ -519,16 +512,10 @@ class Handler(BaseHTTPRequestHandler):
             }
             self._send(json.dumps(payload, ensure_ascii=False).encode(),
                        "application/json")
-        elif self.path.startswith("/console"):
-            self._send(PAGE.encode(), "text/html")
         else:
-            kakao_key = os.environ.get("KAKAO_JS_KEY", "d7f147d651a33631b6d5575b0de237d7")
-            self._send(MISSION_PAGE.replace("__KAKAO_KEY__", kakao_key).encode(),
-                       "text/html")
+            self._send(PAGE.encode(), "text/html")
 
     def do_POST(self):
-        if self.path == "/api/mission":
-            return self._mission_post()
         if self.path != "/api/control":
             return self._send(b'{"message":"not found"}', "application/json", 404)
         n = int(self.headers.get("Content-Length", 0))
@@ -589,43 +576,6 @@ class Handler(BaseHTTPRequestHandler):
         else:
             return self._send(b'{"message":"unknown action"}', "application/json", 400)
         self._send(json.dumps({"message": msg}, ensure_ascii=False).encode(),
-                   "application/json")
-
-    def _mission_post(self):
-        # 전도 지도는 누구나 기록 가능 (비밀번호 없음)
-        n = int(self.headers.get("Content-Length", 0))
-        try:
-            body = json.loads(self.rfile.read(n))
-        except Exception:
-            return self._send(b'{"message":"bad request"}', "application/json", 400)
-
-        from datetime import datetime, timezone, timedelta
-        spots = _read("mission_spots.json", [])
-        action = body.get("action")
-        if action == "add":
-            spots.append({
-                "id": uuid.uuid4().hex[:8],
-                "lat": float(body["lat"]), "lng": float(body["lng"]),
-                "name": str(body.get("name", ""))[:60],
-                "status": body.get("status") if body.get("status") in ("done", "todo", "pickup") else "todo",
-                "time": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M"),
-            })
-        elif action in ("toggle", "status"):
-            new = body.get("status")
-            for s in spots:
-                if s["id"] == body.get("id"):
-                    if new in ("done", "todo", "pickup"):
-                        s["status"] = new
-                    else:  # 구버전 toggle 호환
-                        s["status"] = "todo" if s["status"] == "done" else "done"
-                    s["time"] = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M")
-        elif action == "delete":
-            spots = [s for s in spots if s["id"] != body.get("id")]
-        else:
-            return self._send(b'{"message":"unknown action"}', "application/json", 400)
-        (DATA_DIR / "mission_spots.json").write_text(
-            json.dumps(spots, ensure_ascii=False, indent=1))
-        self._send(json.dumps({"spots": spots}, ensure_ascii=False).encode(),
                    "application/json")
 
 
