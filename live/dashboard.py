@@ -378,9 +378,19 @@ async function refresh() {
     const toHi = (hi/pnow - 1) * 100, toLo = (lo/pnow - 1) * 100;
     const state = ({'1':'📈 롱 유지 (상승 추세 추종 중)','-1':'📉 숏 유지 (하락 추세 추종 중)',
                     '0':'⏸ 관망 (돌파 대기)'})[String(bs.signal)] || '-';
+    // 분석 기간 계산
+    const hoursMap = {'1m':1/60,'5m':5/60,'10m':1/6,'30m':0.5,'1h':1,'4h':4,'1d':24};
+    const h = hoursMap[bs.interval] || 4;
+    const days = (n * h / 24).toFixed(1);
+    const basisMap = {
+      '1': `현재가가 최근 ${days}일 최고가(${Math.round(hi).toLocaleString()})를 상향 돌파한 뒤 하단을 지키고 있음 → 상승 추세 지속으로 판단`,
+      '-1': `현재가가 최근 ${days}일 최저가(${Math.round(lo).toLocaleString()})를 하향 이탈한 뒤 상단을 회복하지 못함 → 하락 추세 지속으로 판단`,
+      '0': `현재가가 채널 내부(${Math.round(lo).toLocaleString()}~${Math.round(hi).toLocaleString()})에 있어 방향 미확정 → 돌파 대기`};
     av.innerHTML = `${state}<br>` +
       `<span style="color:#00C077">▲ ${Math.round(hi).toLocaleString()} 돌파 시 롱 전환</span> (+${toHi.toFixed(1)}%)<br>` +
-      `<span style="color:#FF4D5E">▼ ${Math.round(lo).toLocaleString()} 이탈 시 숏 전환</span> (${toLo.toFixed(1)}%)`;
+      `<span style="color:#FF4D5E">▼ ${Math.round(lo).toLocaleString()} 이탈 시 숏 전환</span> (${toLo.toFixed(1)}%)<br>` +
+      `<span style="color:#6B7686;font-size:11px">분석: ${bs.interval} 봉 ${n}개 = 최근 ${days}일의 고가/저가 채널 (마감봉 기준, 미완성 봉 제외)<br>` +
+      `근거: ${basisMap[String(bs.signal)] || '-'}</span>`;
   } else av.textContent = '-';
   document.getElementById('cash').textContent =
     d.state.cash != null ? d.state.cash.toLocaleString(undefined,{maximumFractionDigits:0}) : '-';
