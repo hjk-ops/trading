@@ -67,10 +67,33 @@ def _youtube_trending():
                      v.get("ownerText", {}).get("runs", []))
         length = v.get("lengthText", {}).get("simpleText", "")
         out.append({"id": vid, "title": title[:80], "views": views,
-                    "channel": ch, "len": length})
-        if len(out) >= 24:
+                    "channel": ch, "len": length, "shorts": _is_short(length)})
+        if len(out) >= 40:
             break
+    # 쇼츠 전용 렌더러(reelItemRenderer)도 수집
+    reels = []
+    _walk(data, "reelItemRenderer", reels)
+    for v in reels:
+        vid = v.get("videoId")
+        if not vid or vid in seen:
+            continue
+        seen.add(vid)
+        title = v.get("headline", {}).get("simpleText", "")
+        views = v.get("viewCountText", {}).get("simpleText", "")
+        out.append({"id": vid, "title": title[:80], "views": views,
+                    "channel": "", "len": "쇼츠", "shorts": True})
     return out
+
+
+def _is_short(length_text):
+    """'0:45' 같은 길이 문자열이 60초 이하인지."""
+    try:
+        parts = [int(x) for x in length_text.split(":")]
+        sec = parts[-1] + (parts[-2] * 60 if len(parts) > 1 else 0) \
+              + (parts[-3] * 3600 if len(parts) > 2 else 0)
+        return sec <= 61
+    except Exception:
+        return False
 
 
 def fetch_trends():
@@ -80,7 +103,8 @@ def fetch_trends():
     if os.environ.get("FAKE_TRENDS"):
         data = {"google": [{"title": f"테스트 검색어 {i}", "traffic": f"{i}0만+"} for i in range(1, 6)],
                 "youtube": [{"id": "dQw4w9WgXcQ", "title": f"테스트 영상 {i}", "views": "123만회",
-                             "channel": "채널", "len": "0:45"} for i in range(1, 5)],
+                             "channel": "채널", "len": "0:45" if i % 2 else "5:30",
+                             "shorts": bool(i % 2)} for i in range(1, 5)],
                 "updated": time.strftime("%H:%M")}
         _CACHE.update(t=now, data=data)
         return data
@@ -132,6 +156,13 @@ TRENDS_PAGE = """<!DOCTYPE html>
   .vid .m { font-size:10.5px; color:var(--mut); padding:2px 10px 10px;
             font-family:'IBM Plex Mono',monospace; }
   .badge { position:absolute; }
+  .tab { font-family:'IBM Plex Mono',monospace; font-size:10.5px; padding:4px 10px;
+         border:1px solid var(--line); border-radius:3px; background:transparent;
+         color:var(--mut); cursor:pointer; margin-left:4px; }
+  .tab.on { border-color:var(--hot); color:var(--hot); }
+  .shortsBadge { position:absolute; top:6px; left:6px; background:#FF4D5Ecc; color:#fff;
+         font-size:9px; font-weight:700; padding:2px 6px; border-radius:3px; }
+  .vid { position:relative; }
   .muted { color:var(--mut); font-size:11px; padding:0 16px 24px;
            font-family:'IBM Plex Mono',monospace; }
 </style></head>
@@ -145,11 +176,34 @@ TRENDS_PAGE = """<!DOCTYPE html>
   <div class="chips" id="chips">불러오는 중…</div>
 </div>
 <div class="sec">
-  <h2>YOUTUBE 인기 급상승 · KR (쇼츠 포함)</h2>
+  <h2>YOUTUBE 인기 급상승 · KR
+    <span style="float:right">
+      <button class="tab on" data-f="all">전체</button>
+      <button class="tab" data-f="shorts">쇼츠만</button>
+    </span></h2>
   <div class="vids" id="vids"></div>
 </div>
 <p class="muted" id="upd">10분 주기 갱신</p>
 <script>
+let filter = 'all', cache = null;
+document.addEventListener('click', e => {
+  const b = e.target.closest('.tab'); if (!b) return;
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); filter = b.dataset.f; renderVids();
+});
+function renderVids() {
+  const list = (cache && cache.youtube || [])
+    .filter(v => filter === 'all' || v.shorts);
+  document.getElementById('vids').innerHTML = list.map(v => {
+    const url = v.shorts ? `https://www.youtube.com/shorts/${v.id}`
+                         : `https://www.youtube.com/watch?v=${v.id}`;
+    return `<a class="vid" target="_blank" href="${url}">
+      ${v.shorts ? '<span class="shortsBadge">SHORTS</span>' : ''}
+      <img loading="lazy" src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg">
+      <div class="t">${v.title}</div>
+      <div class="m">${v.channel || ''} ${v.views || ''}${v.len && v.len !== '쇼츠' ? ' · ' + v.len : ''}</div></a>`;
+  }).join('') || '<span style="color:#6B7686">해당 항목 없음</span>';
+}
 async function load() {
   const r = await fetch('/api/trends');
   const d = await r.json();
@@ -158,12 +212,7 @@ async function load() {
         href="https://www.google.com/search?q=${encodeURIComponent(g.title)}">
         <b>${i+1}</b>${g.title}${g.traffic ? `<span>${g.traffic}</span>` : ''}</a>`
   ).join('') || '<span style="color:#6B7686">데이터 없음 (잠시 후 갱신)</span>';
-  document.getElementById('vids').innerHTML = (d.youtube || []).map(v =>
-    `<a class="vid" target="_blank" href="https://www.youtube.com/watch?v=${v.id}">
-      <img loading="lazy" src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg">
-      <div class="t">${v.title}</div>
-      <div class="m">${v.channel || ''} · ${v.views || ''}${v.len ? ' · ' + v.len : ''}</div></a>`
-  ).join('') || '<span style="color:#6B7686">데이터 없음 (잠시 후 갱신)</span>';
+  cache = d; renderVids();
   document.getElementById('upd').textContent =
     `마지막 수집 ${d.updated || '-'} · 10분 주기 갱신 · 출처: Google Trends RSS, YouTube 인기`;
 }
