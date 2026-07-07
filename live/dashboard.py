@@ -12,6 +12,7 @@ import os
 import time as _time
 
 from live.trends import TRENDS_PAGE, fetch_trends
+from live.focus import FOCUS_PAGE
 
 
 _CANDLE_CACHE = {}  # tf -> (timestamp, data)
@@ -212,6 +213,7 @@ PAGE = """<!DOCTYPE html>
     <span id="modebadge" class="tag">…</span>
     <span id="badge" class="tag">…</span>
     <a class="tag i" href="/trends" style="text-decoration:none">🔥</a>
+    <a class="tag i" href="/focus" style="text-decoration:none">📚</a>
     <span class="tag i" onclick="document.getElementById('intro').classList.toggle('open')">INFO</span>
   </div>
 </header>
@@ -584,6 +586,12 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path == "/api/focus":
+            return self._send(json.dumps(
+                {"sessions": _read("focus_sessions.json", [])}, ensure_ascii=False).encode(),
+                "application/json")
+        if self.path.startswith("/focus"):
+            return self._send(FOCUS_PAGE.encode(), "text/html")
         if self.path == "/api/trends":
             return self._send(json.dumps(fetch_trends(), ensure_ascii=False).encode(),
                               "application/json")
@@ -615,6 +623,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send(PAGE.encode(), "text/html")
 
     def do_POST(self):
+        if self.path == "/api/focus":
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(n))
+                from datetime import datetime, timezone, timedelta
+                rows = _read("focus_sessions.json", [])
+                rows.append({
+                    "time": datetime.now(timezone(timedelta(hours=9))).strftime("%m-%d %H:%M"),
+                    "total": int(body.get("total", 0)), "focus": int(body.get("focus", 0)),
+                    "drowsy": int(body.get("drowsy", 0)), "away": int(body.get("away", 0)),
+                    "gone": int(body.get("gone", 0))})
+                (DATA_DIR / "focus_sessions.json").write_text(
+                    json.dumps(rows[-200:], ensure_ascii=False))
+                return self._send(b'{"ok":true}', "application/json")
+            except Exception:
+                return self._send(b'{"message":"bad request"}', "application/json", 400)
         if self.path != "/api/control":
             return self._send(b'{"message":"not found"}', "application/json", 404)
         n = int(self.headers.get("Content-Length", 0))
