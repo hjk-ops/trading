@@ -249,6 +249,7 @@ PAGE = """<!DOCTYPE html>
   <button id="toggleBtn" class="pausebtn" onclick="control()">일시정지</button>
   <button class="closebtn" onclick="control('close')">수동 청산</button>
   <button id="modeBtn" class="closebtn" onclick="switchMode()">실계좌 전환</button>
+  <button class="closebtn" onclick="control('test_telegram')">🔔 알림 테스트</button>
 </div>
 <div id="keyForm" class="intro" style="margin-top:0">
   <h2>BYBIT API KEYS</h2>
@@ -667,6 +668,11 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             msg = f"API 키 저장됨 ({k[:4]}····). 이제 '실계좌 전환'을 누르면 LIVE로 전환됩니다."
+        elif action == "test_telegram":
+            from live.notify import notify
+            ok = notify("🔔 테스트 알림 — 연결 정상!")
+            msg = ("텔레그램 전송 성공! 폰을 확인하세요." if ok else
+                   "전송 실패: TELEGRAM_TOKEN 설정 여부와, 봇에게 먼저 메시지를 보냈는지 확인하세요.")
         elif action == "delete_keys":
             (DATA_DIR / "bybit_keys.json").unlink(missing_ok=True)
             (DATA_DIR / "MODE").write_text("PAPER")

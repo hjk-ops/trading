@@ -107,6 +107,9 @@ def trading_loop():
 
     mode = desired_mode()
     broker = make_broker(mode)
+    from live.notify import notify
+    notify(f"🤖 봇 시작 [{mode}] {strat.name} {params} {symbol} {interval}")
+    err_notified = False
 
     while True:
         try:
@@ -121,6 +124,8 @@ def trading_loop():
                 broker.close(price)
                 mode = want
                 broker = make_broker(mode)
+                notify(("🔴 실계좌(LIVE) 매매 시작 — 레버리지 1배"
+                        if mode == "LIVE" else "🟡 모의(PAPER) 모드로 복귀"))
             target = int(strat.generate_signals(df.iloc[:-1], **params).iloc[-1])
 
             paused = (DATA_DIR / "STOP").exists()
@@ -153,6 +158,9 @@ def trading_loop():
                          interval=interval, mode=mode, error=None)
         except Exception as e:
             log.error(f"[BOT] 루프 오류 (재시도 예정): {e}")
+            if not err_notified:
+                notify(f"❗ 봇 오류 발생 (자동 재시도 중): {str(e)[:150]}")
+                err_notified = True
             write_status(time=kst_now(),
                          price=None, signal=None, position=None,
                          paused=(DATA_DIR / "STOP").exists(), strategy=strat.name,

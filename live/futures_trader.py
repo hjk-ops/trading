@@ -62,6 +62,20 @@ TRADES_FILE = DATA_DIR / "live_trades.json"
 
 
 def record_trade(side, price, amount, pnl_pct=None, equity=None):
+    try:
+        from live.notify import notify
+        tag = {"LONG": "📈 롱 진입", "SHORT": "📉 숏 진입",
+               "CLOSE-L": "✅ 롱 청산", "CLOSE-S": "✅ 숏 청산",
+               "BUY": "📈 매수", "SELL": "✅ 매도"}.get(side, side)
+        msg = f"{tag} @ {price:,.2f}"
+        if pnl_pct is not None:
+            emo = "🟢" if pnl_pct >= 0 else "🔴"
+            msg += f"\n{emo} 손익 {pnl_pct:+.2f}%"
+        if equity is not None:
+            msg += f"\n잔고 {equity:,.2f} USDT"
+        notify(msg)
+    except Exception:
+        pass
     trades = json.loads(TRADES_FILE.read_text()) if TRADES_FILE.exists() else []
     trades.append({"time": datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"), "side": side,
                    "price": price, "amount": amount, "pnl_pct": pnl_pct,
@@ -194,6 +208,11 @@ def reconcile(broker, target: int, price: float, max_usdt: float, stop_loss: flo
 
     if current != 0 and broker.unrealized_pct(price) <= stop_loss:
         log.warning(f"손절 발동 ({stop_loss*100:.0f}%) → 이번 사이클 재진입 없이 관망")
+        try:
+            from live.notify import notify
+            notify(f"⚠️ 손절 발동 ({stop_loss*100:.0f}%) — 포지션 청산 후 관망")
+        except Exception:
+            pass
         broker.close(price)
         return  # 손절 직후 같은 시그널로 곧바로 재진입하는 것을 방지
 
