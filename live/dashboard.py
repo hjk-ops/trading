@@ -10,9 +10,12 @@ import hmac
 import json
 import os
 import time as _time
+import urllib.parse
 
 from live.trends import TRENDS_PAGE, fetch_trends
 from live.focus import FOCUS_PAGE
+from live.study import STUDY_PAGE
+from live.study_engine import MATH_TEMPLATE, diagnose
 
 
 _CANDLE_CACHE = {}  # tf -> (timestamp, data)
@@ -214,6 +217,7 @@ PAGE = """<!DOCTYPE html>
     <span id="badge" class="tag">…</span>
     <a class="tag i" href="/trends" style="text-decoration:none">🔥</a>
     <a class="tag i" href="/focus" style="text-decoration:none">📚</a>
+    <a class="tag i" href="/study" style="text-decoration:none">🎯</a>
     <span class="tag i" onclick="document.getElementById('intro').classList.toggle('open')">INFO</span>
   </div>
 </header>
@@ -586,6 +590,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self.path.startswith("/api/study/template"):
+            sel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("sel", ["미적분"])[0]
+            qs = [{"no": n, "pts": p, "unit": u} for n, p, u in
+                  MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"].get(sel, MATH_TEMPLATE["select"]["미적분"])]
+            return self._send(json.dumps({"questions": qs}, ensure_ascii=False).encode(),
+                              "application/json")
+        if self.path.startswith("/study"):
+            return self._send(STUDY_PAGE.encode(), "text/html")
         if self.path == "/api/focus":
             return self._send(json.dumps(
                 {"sessions": _read("focus_sessions.json", [])}, ensure_ascii=False).encode(),
@@ -623,6 +635,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send(PAGE.encode(), "text/html")
 
     def do_POST(self):
+        if self.path.startswith("/api/study/template"):
+            sel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("sel", ["미적분"])[0]
+            qs = [{"no": n, "pts": p, "unit": u} for n, p, u in
+                  MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"].get(sel, MATH_TEMPLATE["select"]["미적분"])]
+            return self._send(json.dumps({"questions": qs}, ensure_ascii=False).encode(),
+                              "application/json")
+        if self.path.startswith("/study"):
+            return self._send(STUDY_PAGE.encode(), "text/html")
         if self.path == "/api/focus":
             n = int(self.headers.get("Content-Length", 0))
             try:
