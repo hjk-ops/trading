@@ -66,7 +66,12 @@ STUDY_PAGE = """<!DOCTYPE html>
       <option value="3">목표: 3등급</option>
       <option value="4">목표: 4등급</option></select>
   </div>
-  <h2>채점 입력 — 틀린 문항만 탭하세요 (기본=정답)</h2>
+  <h2>채점 입력 — 틀린 문항만 탭 (기본=정답)</h2>
+  <button id="photoBtn" style="width:100%;padding:12px;margin-bottom:10px;border-radius:10px;
+    border:1px dashed var(--line);background:transparent;color:var(--mut);font-size:13.5px;
+    cursor:pointer" onclick="document.getElementById('photoIn').click()">
+    📷 채점된 답안지 사진으로 자동 입력</button>
+  <input id="photoIn" type="file" accept="image/*" capture="environment" style="display:none">
   <div class="grid" id="grid"></div>
   <button class="main" onclick="analyze()">진단 보고서 생성</button>
 
@@ -107,6 +112,50 @@ function renderGrid() {
       <div class="no">${q.no}</div><div class="u">${q.unit}·${q.pts}점</div></div>`).join('');
 }
 window.tap = i => { qs[i].correct = !qs[i].correct; renderGrid(); };
+
+document.getElementById('photoIn').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  if (!(TEMPLATE && TEMPLATE.vision)) {
+    alert('사진 채점을 쓰려면 Railway Variables에 ANTHROPIC_API_KEY를 등록하세요. 등록 즉시 활성화됩니다.');
+    e.target.value = ''; return;
+  }
+  const btn = document.getElementById('photoBtn');
+  btn.textContent = '🔍 AI 채점 분석 중… (10~20초)';
+  try {
+    const b64 = await shrink(f);
+    const r = await fetch('/api/study/vision', { method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ image: b64, media_type: 'image/jpeg',
+        q_numbers: qs.map(q => q.no) }) });
+    const d = await r.json();
+    if (d.error) { alert(d.error); }
+    else {
+      qs.forEach(q => { q.correct = !d.wrong.includes(q.no); });
+      renderGrid();
+      const un = d.uncertain || [];
+      alert(`틀린 문항 ${d.wrong.length}개 반영: ${d.wrong.join(', ') || '없음'}
+${un.length ? '⚠️ 판독 애매(직접 확인): ' + un.join(', ') : ''}
+그리드를 확인·수정한 뒤 진단을 실행하세요.`);
+    }
+  } catch(err) { alert('분석 실패: ' + err.message); }
+  btn.textContent = '📷 채점된 답안지 사진으로 자동 입력';
+  e.target.value = '';
+};
+
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const M = 1400, s = Math.min(1, M / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = img.width * s; c.height = img.height * s;
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      res(c.toDataURL('image/jpeg', 0.85).split(',')[1]);
+    };
+    img.onerror = rej;
+    img.src = URL.createObjectURL(file);
+  });
+}
 document.getElementById('sel').onchange = loadTemplate;
 
 window.analyze = async () => {

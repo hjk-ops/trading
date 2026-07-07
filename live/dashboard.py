@@ -16,10 +16,13 @@ from live.trends import TRENDS_PAGE, fetch_trends
 from live.focus import FOCUS_PAGE
 from live.study import STUDY_PAGE
 from live.study_engine import MATH_TEMPLATE, SUBJECTS, diagnose
+from live.vision import grade_photo, vision_ready
 from live.study import STUDY_PAGE
 from live.study_engine import MATH_TEMPLATE, SUBJECTS, diagnose
+from live.vision import grade_photo, vision_ready
 from live.study import STUDY_PAGE
 from live.study_engine import MATH_TEMPLATE, SUBJECTS, diagnose
+from live.vision import grade_photo, vision_ready
 
 
 _CANDLE_CACHE = {}  # tf -> (timestamp, data)
@@ -607,7 +610,8 @@ class Handler(BaseHTTPRequestHandler):
             extra = tpl["select"].get(sel, tpl["select"][sels[0]] if sels else [])
             questions = [{"no": n, "pts": p, "unit": u}
                          for n, p, u in tpl["common"] + extra]
-            return self._send(json.dumps({"questions": questions, "selects": sels},
+            return self._send(json.dumps({"questions": questions, "selects": sels,
+                                          "vision": vision_ready()},
                                          ensure_ascii=False).encode(), "application/json")
         if self.path == "/api/study/history":
             return self._send(json.dumps(
@@ -651,6 +655,21 @@ class Handler(BaseHTTPRequestHandler):
         self._send(PAGE.encode(), "text/html")
 
     def do_POST(self):
+        if self.path == "/api/study/vision":
+            n = int(self.headers.get("Content-Length", 0))
+            if n > 6_000_000:
+                return self._send(json.dumps({"error": "이미지가 너무 큽니다"}).encode(),
+                                  "application/json", 400)
+            try:
+                body = json.loads(self.rfile.read(n))
+                result = grade_photo(body["image"], body.get("media_type", "image/jpeg"),
+                                     body.get("q_numbers", list(range(1, 31))))
+                code = 400 if "error" in result else 200
+                return self._send(json.dumps(result, ensure_ascii=False).encode(),
+                                  "application/json", code)
+            except Exception as e:
+                return self._send(json.dumps({"error": str(e)[:100]}).encode(),
+                                  "application/json", 400)
         if self.path == "/api/study/diagnose":
             n = int(self.headers.get("Content-Length", 0))
             try:
