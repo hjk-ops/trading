@@ -18,6 +18,8 @@ from live.study import STUDY_PAGE
 from live.study_engine import MATH_TEMPLATE, diagnose
 from live.study import STUDY_PAGE
 from live.study_engine import MATH_TEMPLATE, diagnose
+from live.study import STUDY_PAGE
+from live.study_engine import MATH_TEMPLATE, diagnose
 
 
 _CANDLE_CACHE = {}  # tf -> (timestamp, data)
@@ -219,6 +221,7 @@ PAGE = """<!DOCTYPE html>
     <span id="badge" class="tag">…</span>
     <a class="tag i" href="/trends" style="text-decoration:none">🔥</a>
     <a class="tag i" href="/focus" style="text-decoration:none">📚</a>
+    <a class="tag i" href="/study" style="text-decoration:none">🎯</a>
     <a class="tag i" href="/study" style="text-decoration:none">🎯</a>
     <a class="tag i" href="/study" style="text-decoration:none">🎯</a>
     <span class="tag i" onclick="document.getElementById('intro').classList.toggle('open')">INFO</span>
@@ -604,6 +607,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/api/study/template"):
             sel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query
                                         ).get("sel", ["미적분"])[0]
+            sel = sel if sel in MATH_TEMPLATE["select"] else "미적분"
+            questions = [{"no": n, "pts": p, "unit": u}
+                         for n, p, u in MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"][sel]]
+            return self._send(json.dumps({"questions": questions},
+                                         ensure_ascii=False).encode(), "application/json")
+        if self.path.startswith("/study"):
+            return self._send(STUDY_PAGE.encode(), "text/html")
+        if self.path.startswith("/api/study/template"):
+            import urllib.parse as _up
+            sel = _up.parse_qs(_up.urlparse(self.path).query).get("sel", ["미적분"])[0]
             sel = sel if sel in MATH_TEMPLATE["select"] else "미적분"
             questions = [{"no": n, "pts": p, "unit": u}
                          for n, p, u in MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"][sel]]
