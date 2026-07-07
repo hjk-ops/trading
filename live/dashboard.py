@@ -15,11 +15,11 @@ import urllib.parse
 from live.trends import TRENDS_PAGE, fetch_trends
 from live.focus import FOCUS_PAGE
 from live.study import STUDY_PAGE
-from live.study_engine import MATH_TEMPLATE, diagnose
+from live.study_engine import MATH_TEMPLATE, SUBJECTS, diagnose
 from live.study import STUDY_PAGE
-from live.study_engine import MATH_TEMPLATE, diagnose
+from live.study_engine import MATH_TEMPLATE, SUBJECTS, diagnose
 from live.study import STUDY_PAGE
-from live.study_engine import MATH_TEMPLATE, diagnose
+from live.study_engine import MATH_TEMPLATE, SUBJECTS, diagnose
 
 
 _CANDLE_CACHE = {}  # tf -> (timestamp, data)
@@ -597,37 +597,28 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/api/study/template"):
-            sel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("sel", ["미적분"])[0]
-            qs = [{"no": n, "pts": p, "unit": u} for n, p, u in
-                  MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"].get(sel, MATH_TEMPLATE["select"]["미적분"])]
-            return self._send(json.dumps({"questions": qs}, ensure_ascii=False).encode(),
-                              "application/json")
-        if self.path.startswith("/study"):
-            return self._send(STUDY_PAGE.encode(), "text/html")
-        if self.path.startswith("/api/study/template"):
-            sel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query
-                                        ).get("sel", ["미적분"])[0]
-            sel = sel if sel in MATH_TEMPLATE["select"] else "미적분"
-            questions = [{"no": n, "pts": p, "unit": u}
-                         for n, p, u in MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"][sel]]
-            return self._send(json.dumps({"questions": questions},
-                                         ensure_ascii=False).encode(), "application/json")
-        if self.path.startswith("/study"):
-            return self._send(STUDY_PAGE.encode(), "text/html")
-        if self.path.startswith("/api/study/template"):
             import urllib.parse as _up
-            sel = _up.parse_qs(_up.urlparse(self.path).query).get("sel", ["미적분"])[0]
-            sel = sel if sel in MATH_TEMPLATE["select"] else "미적분"
+            q = _up.parse_qs(_up.urlparse(self.path).query)
+            subject = q.get("subject", ["수학"])[0]
+            subject = subject if subject in SUBJECTS else "수학"
+            tpl = SUBJECTS[subject]["template"]
+            sels = list(tpl["select"].keys())
+            sel = q.get("sel", [sels[0] if sels else ""])[0]
+            extra = tpl["select"].get(sel, tpl["select"][sels[0]] if sels else [])
             questions = [{"no": n, "pts": p, "unit": u}
-                         for n, p, u in MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"][sel]]
-            return self._send(json.dumps({"questions": questions},
+                         for n, p, u in tpl["common"] + extra]
+            return self._send(json.dumps({"questions": questions, "selects": sels},
                                          ensure_ascii=False).encode(), "application/json")
+        if self.path == "/api/study/history":
+            return self._send(json.dumps(
+                {"sessions": _read("study_sessions.json", [])},
+                ensure_ascii=False).encode(), "application/json")
         if self.path.startswith("/study"):
             return self._send(STUDY_PAGE.encode(), "text/html")
         if self.path == "/api/focus":
             return self._send(json.dumps(
-                {"sessions": _read("focus_sessions.json", [])}, ensure_ascii=False).encode(),
-                "application/json")
+                {"sessions": _read("focus_sessions.json", [])},
+                ensure_ascii=False).encode(), "application/json")
         if self.path.startswith("/focus"):
             return self._send(FOCUS_PAGE.encode(), "text/html")
         if self.path == "/api/trends":
@@ -655,30 +646,31 @@ class Handler(BaseHTTPRequestHandler):
                 "keys_set": _keys_present(),
                 "key_masked": _key_masked(),
             }
-            self._send(json.dumps(payload, ensure_ascii=False).encode(),
-                       "application/json")
-        else:
-            self._send(PAGE.encode(), "text/html")
+            return self._send(json.dumps(payload, ensure_ascii=False).encode(),
+                              "application/json")
+        self._send(PAGE.encode(), "text/html")
 
     def do_POST(self):
-        if self.path.startswith("/api/study/template"):
-            sel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("sel", ["미적분"])[0]
-            qs = [{"no": n, "pts": p, "unit": u} for n, p, u in
-                  MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"].get(sel, MATH_TEMPLATE["select"]["미적분"])]
-            return self._send(json.dumps({"questions": qs}, ensure_ascii=False).encode(),
-                              "application/json")
-        if self.path.startswith("/study"):
-            return self._send(STUDY_PAGE.encode(), "text/html")
-        if self.path.startswith("/api/study/template"):
-            sel = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query
-                                        ).get("sel", ["미적분"])[0]
-            sel = sel if sel in MATH_TEMPLATE["select"] else "미적분"
-            questions = [{"no": n, "pts": p, "unit": u}
-                         for n, p, u in MATH_TEMPLATE["common"] + MATH_TEMPLATE["select"][sel]]
-            return self._send(json.dumps({"questions": questions},
-                                         ensure_ascii=False).encode(), "application/json")
-        if self.path.startswith("/study"):
-            return self._send(STUDY_PAGE.encode(), "text/html")
+        if self.path == "/api/study/diagnose":
+            n = int(self.headers.get("Content-Length", 0))
+            try:
+                body = json.loads(self.rfile.read(n))
+                result = diagnose(body["questions"], body.get("target_grade", 2),
+                                  subject=body.get("subject", "수학"))
+                from datetime import datetime, timezone, timedelta
+                rows = _read("study_sessions.json", [])
+                rows.append({"time": datetime.now(timezone(timedelta(hours=9))
+                                                  ).strftime("%m-%d %H:%M"),
+                             "subject": body.get("subject", "수학"),
+                             "score": result["score"], "target": result["target"],
+                             "top_unit": result["plan"][0]["unit"] if result["plan"] else None})
+                (DATA_DIR / "study_sessions.json").write_text(
+                    json.dumps(rows[-100:], ensure_ascii=False))
+                return self._send(json.dumps(result, ensure_ascii=False).encode(),
+                                  "application/json")
+            except Exception as e:
+                return self._send(json.dumps({"message": str(e)[:100]}).encode(),
+                                  "application/json", 400)
         if self.path == "/api/focus":
             n = int(self.headers.get("Content-Length", 0))
             try:
@@ -689,7 +681,8 @@ class Handler(BaseHTTPRequestHandler):
                     "time": datetime.now(timezone(timedelta(hours=9))).strftime("%m-%d %H:%M"),
                     "total": int(body.get("total", 0)), "focus": int(body.get("focus", 0)),
                     "drowsy": int(body.get("drowsy", 0)), "away": int(body.get("away", 0)),
-                    "gone": int(body.get("gone", 0))})
+                    "gone": int(body.get("gone", 0)),
+                    "unit": (body.get("unit") or "")[:30]})
                 (DATA_DIR / "focus_sessions.json").write_text(
                     json.dumps(rows[-200:], ensure_ascii=False))
                 return self._send(b'{"ok":true}', "application/json")

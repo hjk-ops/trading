@@ -54,12 +54,13 @@ STUDY_PAGE = """<!DOCTYPE html>
   .verdict b { color:var(--warn); }
 </style></head>
 <body>
-<header><h1>🎯 학습 진단 · 수학</h1><a href="/">콘솔</a></header>
+<header><h1>🎯 학습 진단</h1><a href="/focus" style="margin-left:auto">📚</a><a href="/" style="margin-left:8px">콘솔</a></header>
 <div class="wrap">
   <div class="row">
-    <select id="sel"><option value="미적분">선택: 미적분</option>
-      <option value="확률과통계">선택: 확률과통계</option>
-      <option value="기하">선택: 기하</option></select>
+    <select id="subject" onchange="loadTemplate()">
+      <option value="수학">수학</option><option value="국어">국어</option>
+      <option value="영어">영어</option></select>
+    <select id="sel"></select>
     <select id="grade"><option value="1">목표: 1등급</option>
       <option value="2" selected>목표: 2등급</option>
       <option value="3">목표: 3등급</option>
@@ -78,15 +79,25 @@ STUDY_PAGE = """<!DOCTYPE html>
     </div>
     <div class="card"><h2 style="margin-top:0">단원별 정답률</h2><div id="rUnits"></div></div>
     <div class="card"><h2 style="margin-top:0">우선순위 학습 플랜</h2>
-      <div class="verdict" id="rVerdict"></div><div id="rPlan"></div></div>
+      <div class="verdict" id="rVerdict"></div><div id="rPlan"></div>
+      <button class="main" id="goFocus" style="margin-top:10px;background:var(--ok)">
+        📚 1순위 단원 공부 시작 (집중 트래커)</button></div>
+    <div class="card"><h2 style="margin-top:0">성장 추이</h2><div id="growth"></div></div>
   </div>
 </div>
 <script>
 let TEMPLATE = null, qs = [];
 
-async function loadTemplate() {
-  const r = await fetch('/api/study/template?sel=' + document.getElementById('sel').value);
+window.loadTemplate = async function() {
+  const subject = document.getElementById('subject').value;
+  const selEl = document.getElementById('sel');
+  const r = await fetch('/api/study/template?subject=' + encodeURIComponent(subject) +
+                        '&sel=' + encodeURIComponent(selEl.value || ''));
   TEMPLATE = await r.json();
+  const sels = TEMPLATE.selects || [];
+  selEl.style.display = sels.length ? '' : 'none';
+  if (sels.length && ![...selEl.options].some(o => sels.includes(o.value)))
+    selEl.innerHTML = sels.map(s => `<option value="${s}">선택: ${s}</option>`).join('');
   qs = TEMPLATE.questions.map(q => ({...q, correct: true}));
   renderGrid();
 }
@@ -102,6 +113,7 @@ window.analyze = async () => {
   const r = await fetch('/api/study/diagnose', { method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ questions: qs,
+      subject: document.getElementById('subject').value,
       target_grade: document.getElementById('grade').value }) });
   const d = await r.json();
   document.getElementById('report').style.display = 'block';
@@ -133,8 +145,34 @@ window.analyze = async () => {
        : '실수 유형 점검 위주로 짧게 보강.'}
      여기까지 완료 시 누적 +${p.cum}점${p.enough ? ' → <b style="color:var(--ok)">목표 도달 예상</b>' : ''}</div></div>`
   ).join('');
+  const top1 = d.plan[0];
+  document.getElementById('goFocus').onclick = () =>
+    location.href = '/focus' + (top1 ? '?unit=' + encodeURIComponent(top1.unit) : '');
+  drawGrowth();
   window.scrollTo({ top: document.getElementById('report').offsetTop, behavior:'smooth' });
 };
+
+async function drawGrowth() {
+  const r = await fetch('/api/study/history');
+  const subj = document.getElementById('subject').value;
+  const rows = ((await r.json()).sessions || []).filter(s => (s.subject || '수학') === subj);
+  if (rows.length < 2) {
+    document.getElementById('growth').innerHTML =
+      '<span style="color:#6B7686;font-size:12px">회차가 2번 이상 쌓이면 그래프가 그려집니다</span>';
+    return;
+  }
+  const w = 300, h = 80, min = 0, max = 100;
+  const pts = rows.map((s, i) =>
+    `${(i / (rows.length - 1) * (w - 20) + 10).toFixed(1)},${(h - 10 - (s.score - min) / (max - min) * (h - 20)).toFixed(1)}`);
+  const tgt = h - 10 - (rows[rows.length-1].target) / 100 * (h - 20);
+  document.getElementById('growth').innerHTML =
+    `<svg viewBox="0 0 ${w} ${h}" style="width:100%">
+      <line x1="10" y1="${tgt}" x2="${w-10}" y2="${tgt}" stroke="#F5A623" stroke-dasharray="4 3" stroke-width="1"/>
+      <polyline points="${pts.join(' ')}" fill="none" stroke="#3E9DFF" stroke-width="2"/>
+      ${pts.map((p,i) => `<circle cx="${p.split(',')[0]}" cy="${p.split(',')[1]}" r="3" fill="#3E9DFF"/><text x="${p.split(',')[0]}" y="${parseFloat(p.split(',')[1])-7}" fill="#D7DEE8" font-size="9" text-anchor="middle">${rows[i].score}</text>`).join('')}
+    </svg>
+    <div style="font-size:10px;color:#6B7686">파란 선=회차 점수 · 노란 점선=목표 컷 (${subj}, 최근 ${rows.length}회)</div>`;
+}
 loadTemplate();
 </script>
 </body></html>"""

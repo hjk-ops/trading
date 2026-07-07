@@ -55,7 +55,11 @@ FOCUS_PAGE = """<!DOCTYPE html>
   .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); }
 </style></head>
 <body>
-<header><h1>📚 집중 트래커</h1><a href="/">콘솔</a></header>
+<header><h1>📚 집중 트래커</h1><a href="/study" style="margin-left:auto">🎯</a><a href="/" style="margin-left:8px">콘솔</a></header>
+<div id="goal" style="display:none;margin:12px 16px 0;padding:10px 14px;background:#3E9DFF14;
+  border:1px solid #3E9DFF55;border-radius:10px;font-size:13px">
+  🎯 오늘의 목표 단원: <b id="goalUnit" style="color:#3E9DFF"></b>
+  <span style="color:#6B7686;font-size:11px">(진단 보고서 1순위)</span></div>
 <div class="wrap">
   <div class="cam">
     <video id="cam" autoplay playsinline muted></video>
@@ -84,6 +88,11 @@ import { FaceLandmarker, FilesetResolver } from
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
 let lm = null, running = false, raf = null;
+const goalUnit = new URLSearchParams(location.search).get('unit') || null;
+if (goalUnit) {
+  document.getElementById('goal').style.display = 'block';
+  document.getElementById('goalUnit').textContent = goalUnit;
+}
 let t = { focus:0, drowsy:0, away:0, gone:0 };
 let cur = 'idle', curSince = 0, lastTick = 0;
 let pend = { state:null, since:0 };  // 상태 전환 지연 판정
@@ -185,7 +194,7 @@ window.toggle = async function() {
         headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ total: Math.round(total), focus: Math.round(t.focus),
           drowsy: Math.round(t.drowsy), away: Math.round(t.away),
-          gone: Math.round(t.gone) }) });
+          gone: Math.round(t.gone), unit: goalUnit }) });
     }
     loadHist();
   }

@@ -35,15 +35,51 @@ MATH_TEMPLATE = {
               "경우의수", "확률", "통계", "이차곡선", "평면벡터", "공간도형"],
 }
 
-# 등급별 대략적 원점수 컷 (수학, 최근 수능 기준 근사치 — 시험 난이도에 따라 변동)
-GRADE_CUT = {1: 84, 2: 76, 3: 65, 4: 52, 5: 40}
+KOREAN_TEMPLATE = {
+    # 공통 34문항 = 76점 (2점 26개 + 3점 8개), 선택 11문항 = 24점 (2점 9개 + 3점 5개... )
+    "common": (
+        [(i, 3 if i in (6, 10, 14, 17) else 2, "독서") for i in range(1, 18)] +
+        [(i, 3 if i in (22, 27, 30, 33) else 2, "문학") for i in range(18, 35)]
+    ),
+    "select": {
+        "화법과작문": [(i, 3 if i in (40, 43) else 2, "화법과작문")
+                    for i in range(35, 46)],
+        "언어와매체": [(i, 3 if i in (40, 43) else 2, "언어와매체")
+                    for i in range(35, 46)],
+    },
+}
+
+ENGLISH_TEMPLATE = {
+    "common": (
+        [(i, 2, "듣기") for i in range(1, 18)] +
+        [(18, 2, "글의목적"), (19, 2, "심경분위기"), (20, 2, "주장"),
+         (21, 3, "함축의미"), (22, 3, "요지"), (23, 2, "주제"), (24, 2, "제목"),
+         (25, 2, "도표"), (26, 2, "내용일치"), (27, 2, "실용문"), (28, 2, "실용문"),
+         (29, 3, "어법"), (30, 3, "어휘"),
+         (31, 2, "빈칸추론"), (32, 3, "빈칸추론"), (33, 3, "빈칸추론"), (34, 3, "빈칸추론"),
+         (35, 2, "무관한문장"), (36, 2, "순서배열"), (37, 3, "순서배열"),
+         (38, 2, "문장삽입"), (39, 3, "문장삽입"), (40, 3, "요약문"),
+         (41, 2, "장문독해"), (42, 2, "장문독해"), (43, 2, "장문독해"),
+         (44, 2, "장문독해"), (45, 2, "장문독해")]
+    ),
+    "select": {},
+}
+
+# 과목별 등급컷 (근사치 — 시험 난이도에 따라 변동, 영어는 절대평가 고정)
+SUBJECTS = {
+    "수학": {"template": MATH_TEMPLATE, "cut": {1: 84, 2: 76, 3: 65, 4: 52, 5: 40}},
+    "국어": {"template": KOREAN_TEMPLATE, "cut": {1: 85, 2: 78, 3: 68, 4: 56, 5: 44}},
+    "영어": {"template": ENGLISH_TEMPLATE, "cut": {1: 90, 2: 80, 3: 70, 4: 60, 5: 50}},
+}
+GRADE_CUT = SUBJECTS["수학"]["cut"]
 
 
-def diagnose(questions, target_grade):
+def diagnose(questions, target_grade, subject="수학"):
     """questions: [{no, pts, unit, correct}] → 진단 결과 dict."""
+    cut = SUBJECTS.get(subject, SUBJECTS["수학"])["cut"]
     score = sum(q["pts"] for q in questions if q["correct"])
     total = sum(q["pts"] for q in questions)
-    target = GRADE_CUT.get(int(target_grade), 84)
+    target = cut.get(int(target_grade), 84)
     gap = max(0, target - score)
 
     units = {}
@@ -79,6 +115,6 @@ def diagnose(questions, target_grade):
             break
 
     return {"score": score, "total": total, "target": target, "gap": gap,
-            "grade_now": next((g for g, c in sorted(GRADE_CUT.items())
+            "grade_now": next((g for g, c in sorted(cut.items())
                                if score >= c), 5),
             "units": ranked, "plan": plan}
